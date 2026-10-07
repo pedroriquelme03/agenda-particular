@@ -14,6 +14,7 @@ import { NoteScreen, PwaHome } from "@/components/pwa-home";
 import { BottomNav, type Page } from "@/components/bottom-nav";
 import { CalendarView } from "@/components/calendar-view";
 import { LinksView } from "@/components/links-view";
+import { TasksView } from "@/components/tasks-view";
 import { Plus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isConfigured } from "@/lib/trello";
@@ -65,6 +66,12 @@ export default function Home() {
     }
   };
 
+  // Appointments live in the calendar, not in the notes list.
+  const notes = useMemo(
+    () => entries.filter((e) => !(e.is_reminder && e.reminder_date)),
+    [entries]
+  );
+
   const reminders = useMemo(
     () =>
       entries.filter(
@@ -93,6 +100,7 @@ export default function Home() {
       <PwaHome
         createEntry={createEntry}
         onOpenLinks={() => navigate("links")}
+        onOpenTasks={() => navigate("tasks")}
         nav={bottomNav}
       />
     );
@@ -145,7 +153,7 @@ export default function Home() {
                   <div className="text-center py-12 text-muted-foreground">
                     Carregando...
                   </div>
-                ) : entries.length === 0 ? (
+                ) : notes.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     {search
                       ? "Nenhum resultado encontrado."
@@ -153,7 +161,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {entries.map((entry) => (
+                    {notes.map((entry) => (
                       <EntryCard
                         key={entry.id}
                         entry={entry}
@@ -216,6 +224,18 @@ export default function Home() {
                   deleteEntry={deleteEntry}
                   onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
                 />
+              </div>
+            </ScrollArea>
+          </>
+        ) : view === "tasks" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Tarefas</h2>
+            </header>
+
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="max-w-2xl mx-auto p-4 md:p-6">
+                <TasksView />
               </div>
             </ScrollArea>
           </>

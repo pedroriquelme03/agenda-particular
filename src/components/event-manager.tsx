@@ -37,6 +37,8 @@ export interface Event {
   description?: string;
   startTime: Date;
   endTime: Date;
+  // False when the end was not informed; endTime is then only a placeholder.
+  hasEnd?: boolean;
   color: string;
   category?: string;
   tags?: string[];
@@ -51,6 +53,7 @@ export interface EventDraft {
   title: string;
   description: string;
   startTime: Date;
+  endTime: Date | null;
 }
 
 type CalendarView = "month" | "week" | "day" | "list";
@@ -93,6 +96,31 @@ function nextFullHour() {
   const date = new Date();
   date.setHours(date.getHours() + 1, 0, 0, 0);
   return date;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+// Same calendar day as the one given, at the "HH:mm" given.
+function withTime(day: Date, time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  const date = new Date(day);
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+}
+
+const timeRange = (event: Event) =>
+  event.hasEnd
+    ? formatTime(event.startTime) + " – " + formatTime(event.endTime)
+    : formatTime(event.startTime);
+
+// Whether the event occupies this hour cell: 09:00–12:00 fills 9, 10 and 11.
+function coversHour(event: Event, day: Date, hour: number) {
+  if (!isSameDay(event.startTime, day)) return false;
+  const first = event.startTime.getHours();
+  if (!event.hasEnd) return hour === first;
+  const lastMoment = new Date(event.endTime.getTime() - 1);
+  const last = isSameDay(lastMoment, day) ? lastMoment.getHours() : 23;
+  return hour >= first && hour <= last;
 }
 
 // Start time suggested for a new appointment on a given day.
@@ -180,19 +208,23 @@ export function EventManager({
     });
   }, [events, searchQuery, selectedCategories, showDone]);
 
+  const endBeforeStart = newEvent
+    ? !!newEvent.endTime && newEvent.endTime <= newEvent.startTime
+    : !!selectedEvent?.hasEnd && selectedEvent.endTime <= selectedEvent.startTime;
+
   const closeDialog = () => {
     setNewEvent(null);
     setSelectedEvent(null);
   };
 
   const handleCreateEvent = () => {
-    if (!newEvent || !newEvent.title.trim()) return;
+    if (!newEvent || !newEvent.title.trim() || endBeforeStart) return;
     onEventCreate?.({ ...newEvent, title: newEvent.title.trim() });
     closeDialog();
   };
 
   const handleUpdateEvent = () => {
-    if (!selectedEvent) return;
+    if (!selectedEvent || endBeforeStart) return;
     onEventUpdate?.(selectedEvent.id, selectedEvent);
     closeDialog();
   };
@@ -323,6 +355,7 @@ export function EventManager({
                   title: "",
                   description: "",
                   startTime: nextFullHour(),
+                  endTime: null,
                 })
               }
             >
@@ -415,6 +448,7 @@ export function EventManager({
                         title: "",
                         description: "",
                         startTime: defaultTimeOn(selectedDay),
+                        endTime: null,
                       })
                     }
                   >
@@ -507,7 +541,7 @@ export function EventManager({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="event-start">Data e hora</Label>
+              <Label htmlFor="event-start">Início</Label>
               <Input
                 id="event-start"
                 type="datetime-local"
@@ -523,7 +557,13 @@ export function EventManager({
                   const date = new Date(e.target.value);
                   if (Number.isNaN(date.getTime())) return;
                   if (newEvent) {
-                    setNewEvent({ ...newEvent, startTime: date });
+                    setNewEvent({
+                      ...newEvent,
+                      startTime: date,
+                      endTime: newEvent.endTime
+                        ? withTime(date, formatTime(newEvent.endTime))
+                        : null,
+                    });
                   } else {
                     setSelectedEvent((prev) =>
                       prev
@@ -541,6 +581,51 @@ export function EventManager({
                 }}
               />
             </div>
+
+            {(newEvent || selectedEvent?.movable) && (
+              <div className="space-y-2">
+                <Label htmlFor="event-end">Término (opcional)</Label>
+                <Input
+                  id="event-end"
+                  type="time"
+                  value={
+                    newEvent
+                      ? newEvent.endTime
+                        ? formatTime(newEvent.endTime)
+                        : ""
+                      : selectedEvent?.hasEnd
+                        ? formatTime(selectedEvent.endTime)
+                        : ""
+                  }
+                  onChange={(e) => {
+                    const time = e.target.value;
+                    if (newEvent) {
+                      setNewEvent({
+                        ...newEvent,
+                        endTime: time ? withTime(newEvent.startTime, time) : null,
+                      });
+                    } else {
+                      setSelectedEvent((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              hasEnd: !!time,
+                              endTime: time
+                                ? withTime(prev.startTime, time)
+                                : new Date(prev.startTime.getTime() + HOUR_MS),
+                            }
+                          : null
+                      );
+                    }
+                  }}
+                />
+                {endBeforeStart && (
+                  <p className="text-sm text-destructive">
+                    O término precisa ser depois do início.
+                  </p>
+                )}
+              </div>
+            )}
 
             {!newEvent && selectedEvent?.tags && selectedEvent.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -567,7 +652,7 @@ export function EventManager({
             </Button>
             <Button
               onClick={newEvent ? handleCreateEvent : handleUpdateEvent}
-              disabled={!!newEvent && !newEvent.title.trim()}
+              disabled={(!!newEvent && !newEvent.title.trim()) || endBeforeStart}
             >
               {newEvent ? "Criar" : "Salvar"}
             </Button>
@@ -601,9 +686,12 @@ function EventCard({
   onDragEnd,
   getColorClasses,
   variant = "default",
+  continuation = false,
 }: Omit<ViewProps, "currentDate" | "events"> & {
   event: Event;
   variant?: "default" | "compact" | "detailed";
+  // An hour the event runs through after its first one: colored block, no text.
+  continuation?: boolean;
 }) {
   const colorClasses = getColorClasses(event.color);
   const dragProps = {
@@ -612,6 +700,20 @@ function EventCard({
     onDragEnd,
     onClick: () => onEventClick(event),
   };
+
+  if (continuation) {
+    return (
+      <div
+        {...dragProps}
+        title={timeRange(event) + " " + event.title}
+        className={cn(
+          "cursor-pointer rounded opacity-80",
+          variant === "detailed" ? "min-h-14 sm:min-h-16" : "min-h-10 sm:min-h-14",
+          colorClasses.bg
+        )}
+      />
+    );
+  }
 
   if (variant === "detailed") {
     return (
@@ -630,7 +732,7 @@ function EventCard({
         )}
         <div className="mt-2 flex items-center gap-2 text-xs opacity-80">
           <Clock className="h-3 w-3" />
-          {formatTime(event.startTime)}
+          {timeRange(event)}
           {event.category && <span>· {event.category}</span>}
         </div>
       </div>
@@ -640,7 +742,7 @@ function EventCard({
   return (
     <div
       {...dragProps}
-      title={`${formatTime(event.startTime)} ${event.title}`}
+      title={timeRange(event) + " " + event.title}
       className={cn(
         "cursor-pointer truncate rounded text-xs font-medium text-white transition-shadow hover:shadow-md",
         variant === "compact" ? "px-1 py-0.5 sm:px-1.5" : "px-2 py-1",
@@ -791,13 +893,14 @@ function WeekView({
               >
                 <div className="space-y-1">
                   {events
-                    .filter(
-                      (event) =>
-                        isSameDay(event.startTime, day) &&
-                        event.startTime.getHours() === hour
-                    )
+                    .filter((event) => coversHour(event, day, hour))
                     .map((event) => (
-                      <EventCard key={event.id} event={event} {...cardProps} />
+                      <EventCard
+                        key={event.id}
+                        event={event}
+                        continuation={event.startTime.getHours() !== hour}
+                        {...cardProps}
+                      />
                     ))}
                 </div>
               </div>
@@ -834,12 +937,13 @@ function DayView({
           <div className="min-h-16 min-w-0 flex-1 p-1 transition-colors hover:bg-accent/50 sm:min-h-20 sm:p-2">
             <div className="space-y-2">
               {dayEvents
-                .filter((event) => event.startTime.getHours() === hour)
+                .filter((event) => coversHour(event, currentDate, hour))
                 .map((event) => (
                   <EventCard
                     key={event.id}
                     event={event}
                     variant="detailed"
+                    continuation={event.startTime.getHours() !== hour}
                     {...cardProps}
                   />
                 ))}
@@ -950,7 +1054,7 @@ function ListView({
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground sm:text-xs">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {formatTime(event.startTime)}
+                          {timeRange(event)}
                         </span>
                         {event.tags
                           ?.filter(

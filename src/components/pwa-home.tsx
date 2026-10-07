@@ -7,6 +7,7 @@ import {
   CalendarPlus,
   ChevronLeft,
   Link2,
+  ListTodo,
   Mic,
   NotebookPen,
   Square,
@@ -28,10 +29,16 @@ type Screen = "home" | "note" | "appointment";
 interface PwaHomeProps {
   createEntry: CreateEntry;
   onOpenLinks: () => void;
+  onOpenTasks: () => void;
   nav: React.ReactNode;
 }
 
-export function PwaHome({ createEntry, onOpenLinks, nav }: PwaHomeProps) {
+export function PwaHome({
+  createEntry,
+  onOpenLinks,
+  onOpenTasks,
+  nav,
+}: PwaHomeProps) {
   const [screen, setScreen] = useState<Screen>("home");
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -94,10 +101,17 @@ export function PwaHome({ createEntry, onOpenLinks, nav }: PwaHomeProps) {
           </button>
           <button
             onClick={onOpenLinks}
-            className="col-span-2 flex aspect-[4/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+            className="flex aspect-[2/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
           >
-            <Link2 className="h-8 w-8" />
+            <Link2 className="h-7 w-7" />
             <span className="text-lg font-semibold">Links</span>
+          </button>
+          <button
+            onClick={onOpenTasks}
+            className="flex aspect-[2/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+          >
+            <ListTodo className="h-7 w-7" />
+            <span className="text-lg font-semibold">Tarefas</span>
           </button>
         </div>
       </main>
@@ -233,13 +247,16 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
   const visibleArea = useVisibleArea();
 
-  const canSave = title.trim() && date && time && !saving;
+  // "HH:mm" strings compare correctly as text.
+  const endBeforeStart = !!endTime && !!time && endTime <= time;
+  const canSave = title.trim() && date && time && !endBeforeStart && !saving;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,6 +273,9 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
       trello_card_id: null,
       is_reminder: true,
       reminder_date: new Date(`${date}T${time}`).toISOString(),
+      reminder_end_date: endTime
+        ? new Date(`${date}T${endTime}`).toISOString()
+        : null,
       tags: ["compromisso"],
     });
     setSaving(false);
@@ -311,7 +331,7 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="appointment-time">Hora</Label>
+            <Label htmlFor="appointment-time">Hora de início</Label>
             <Input
               id="appointment-time"
               type="time"
@@ -319,6 +339,21 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
               onChange={(e) => setTime(e.target.value)}
               className="block h-12 appearance-none text-base"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="appointment-end">Hora de término (opcional)</Label>
+            <Input
+              id="appointment-end"
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="block h-12 appearance-none text-base"
+            />
+            {endBeforeStart && (
+              <p className="text-sm text-destructive">
+                O término precisa ser depois do início.
+              </p>
+            )}
           </div>
         </div>
 

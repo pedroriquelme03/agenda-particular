@@ -30,6 +30,7 @@ function toEvent(entry: Entry): Event {
   const startTime = new Date(
     isAppointment ? entry.reminder_date! : entry.created_at
   );
+  const hasEnd = isAppointment && !!entry.reminder_end_date;
   const firstLine = entry.content.split("\n")[0].trim();
 
   return {
@@ -37,7 +38,10 @@ function toEvent(entry: Entry): Event {
     title: entry.title || firstLine.slice(0, 60) || category,
     description: entry.content,
     startTime,
-    endTime: new Date(startTime.getTime() + HOUR_MS),
+    endTime: hasEnd
+      ? new Date(entry.reminder_end_date!)
+      : new Date(startTime.getTime() + HOUR_MS),
+    hasEnd,
     color: categoryColors[category],
     category,
     tags: entry.tags,
@@ -75,6 +79,7 @@ export function CalendarView({
       trello_card_id: null,
       is_reminder: true,
       reminder_date: draft.startTime.toISOString(),
+      reminder_end_date: draft.endTime ? draft.endTime.toISOString() : null,
       tags: ["compromisso"],
     });
   };
@@ -99,6 +104,15 @@ export function CalendarView({
       changes.startTime.getTime() !== current.startTime.getTime()
     ) {
       updates.reminder_date = changes.startTime.toISOString();
+    }
+
+    if (current.movable && (changes.endTime || changes.hasEnd !== undefined)) {
+      const hasEnd = changes.hasEnd ?? current.hasEnd ?? false;
+      const end = hasEnd
+        ? (changes.endTime ?? current.endTime).toISOString()
+        : null;
+      const previous = current.hasEnd ? current.endTime.toISOString() : null;
+      if (end !== previous) updates.reminder_end_date = end;
     }
 
     if (Object.keys(updates).length > 0) updateEntry(id, updates);

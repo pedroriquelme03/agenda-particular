@@ -6,6 +6,7 @@ import {
   KanbanSquare,
   LayoutDashboard,
   Link2,
+  ListTodo,
 } from "lucide-react";
 import type { View } from "@/components/sidebar";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ const pages = [
   { value: "entries" as const, label: "Anotações", icon: LayoutDashboard },
   { value: "calendar" as const, label: "Calendário", icon: CalendarDays },
   { value: "links" as const, label: "Links", icon: Link2 },
+  { value: "tasks" as const, label: "Tarefas", icon: ListTodo },
   { value: "trello" as const, label: "Trello", icon: KanbanSquare },
 ];
 
@@ -54,7 +56,7 @@ export function BottomNav({
             onClick={() => onNavigate(value)}
             aria-current={active === value ? "page" : undefined}
             className={cn(
-              "flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors",
+              "flex min-w-0 flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
               active === value ? "text-foreground" : "text-muted-foreground"
             )}
           >
