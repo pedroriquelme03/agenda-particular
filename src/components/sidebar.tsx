@@ -6,6 +6,7 @@ import {
   ImageIcon,
   Link2,
   LayoutDashboard,
+  Home,
   Settings,
   KanbanSquare,
 } from "lucide-react";
@@ -25,6 +26,7 @@ interface SidebarProps {
   trelloConnected: boolean;
   open: boolean;
   onClose: () => void;
+  onHome?: () => void;
 }
 
 const filters = [
@@ -44,6 +46,7 @@ export function Sidebar({
   trelloConnected,
   open,
   onClose,
+  onHome,
 }: SidebarProps) {
   return (
     <>
@@ -64,6 +67,18 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 p-2 space-y-1">
+        {onHome && (
+          <button
+            onClick={() => {
+              onClose();
+              onHome();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <Home className="h-4 w-4" />
+            Início
+          </button>
+        )}
         {filters.map(({ value, label, icon: Icon }) => (
           <button
             key={value}

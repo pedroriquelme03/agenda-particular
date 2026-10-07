@@ -9,7 +9,8 @@ import { TrelloConfigDialog, TrelloSendDialog } from "@/components/trello-sync";
 import { TrelloBoards } from "@/components/trello-boards";
 import { useEntries } from "@/hooks/use-entries";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { OfflineBanner } from "@/components/pwa";
+import { OfflineBanner, useStandalone } from "@/components/pwa";
+import { PwaHome } from "@/components/pwa-home";
 import { Menu } from "lucide-react";
 import { isConfigured } from "@/lib/trello";
 import type { Entry } from "@/lib/types";
@@ -33,6 +34,8 @@ export default function Home() {
   const [trelloSendEntry, setTrelloSendEntry] = useState<Entry | null>(null);
   const [trelloConnected, setTrelloConnected] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const standalone = useStandalone();
+  const [showAgenda, setShowAgenda] = useState(false);
 
   useEffect(() => {
     setTrelloConnected(isConfigured());
@@ -49,6 +52,15 @@ export default function Home() {
     [entries]
   );
 
+  if (standalone && !showAgenda) {
+    return (
+      <PwaHome
+        createEntry={createEntry}
+        onShowAll={() => setShowAgenda(true)}
+      />
+    );
+  }
+
   return (
     <div className="flex h-full w-full">
       <Sidebar
@@ -60,6 +72,7 @@ export default function Home() {
         trelloConnected={trelloConnected}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
+        onHome={standalone ? () => setShowAgenda(false) : undefined}
       />
 
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">

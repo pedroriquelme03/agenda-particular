@@ -53,11 +53,26 @@ export function OfflineBanner() {
 
 const noopSubscribe = () => () => {};
 
-function isIOSInBrowser() {
-  const standalone =
+function isStandalone() {
+  return (
     window.matchMedia("(display-mode: standalone)").matches ||
-    ("standalone" in navigator && navigator.standalone === true);
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !standalone;
+    ("standalone" in navigator && navigator.standalone === true)
+  );
+}
+
+function subscribeStandalone(callback: () => void) {
+  const query = window.matchMedia("(display-mode: standalone)");
+  query.addEventListener("change", callback);
+  return () => query.removeEventListener("change", callback);
+}
+
+// True only when running as the installed app, not in a browser tab.
+export function useStandalone() {
+  return useSyncExternalStore(subscribeStandalone, isStandalone, () => false);
+}
+
+function isIOSInBrowser() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !isStandalone();
 }
 
 export function InstallButton() {
