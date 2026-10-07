@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Sidebar, filters, type View } from "@/components/sidebar";
+import { Sidebar, type View } from "@/components/sidebar";
 import { SearchBar } from "@/components/search-bar";
 import { EntryForm } from "@/components/entry-form";
 import { EntryCard } from "@/components/entry-card";
@@ -11,13 +11,13 @@ import { useEntries } from "@/hooks/use-entries";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineBanner, useStandalone } from "@/components/pwa";
 import { NoteScreen, PwaHome } from "@/components/pwa-home";
-import { BottomNav } from "@/components/bottom-nav";
+import { BottomNav, type Page } from "@/components/bottom-nav";
 import { CalendarView } from "@/components/calendar-view";
+import { LinksView } from "@/components/links-view";
 import { Plus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isConfigured } from "@/lib/trello";
 import type { Entry } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 export default function Home() {
   const {
@@ -45,13 +45,24 @@ export default function Home() {
     setTrelloConnected(isConfigured());
   }, []);
 
-  // The calendar shows everything, so it drops the list's filter and search.
+  // Calendar and links ignore the list's search; each page loads what it shows.
   const changeView = (next: View) => {
-    if (next === "calendar") {
-      setFilter("all");
+    if (next === "calendar" || next === "links") {
+      setFilter(next === "links" ? "link" : "all");
       setSearch("");
+    } else if (next === "entries" && view !== "entries") {
+      setFilter("all");
     }
     setView(next);
+  };
+
+  const navigate = (page: Page) => {
+    if (page === "home") {
+      setShowAgenda(false);
+    } else {
+      changeView(page);
+      setShowAgenda(true);
+    }
   };
 
   const reminders = useMemo(
@@ -72,20 +83,19 @@ export default function Home() {
       showHome={standalone}
       className={standalone ? undefined : "md:hidden"}
       active={standalone && !showAgenda ? "home" : view}
-      onNavigate={(page) => {
-        if (page === "home") {
-          setShowAgenda(false);
-        } else {
-          changeView(page);
-          setShowAgenda(true);
-        }
-      }}
+      onNavigate={navigate}
       trelloConnected={trelloConnected}
     />
   );
 
   if (standalone && !showAgenda) {
-    return <PwaHome createEntry={createEntry} nav={bottomNav} />;
+    return (
+      <PwaHome
+        createEntry={createEntry}
+        onOpenLinks={() => navigate("links")}
+        nav={bottomNav}
+      />
+    );
   }
 
   return (
@@ -121,24 +131,6 @@ export default function Home() {
                 <Settings className="h-5 w-5" />
               </button>
             </header>
-
-            <div className="md:hidden flex gap-2 overflow-x-auto border-b px-4 py-2">
-              {filters.map(({ value, label, icon: Icon }) => (
-                <button
-                  key={value}
-                  onClick={() => setFilter(value)}
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-                    filter === value
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {label}
-                </button>
-              ))}
-            </div>
 
             <ScrollArea className="flex-1 min-h-0">
               <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-4">
@@ -206,6 +198,24 @@ export default function Home() {
                     deleteEntry={deleteEntry}
                   />
                 )}
+              </div>
+            </ScrollArea>
+          </>
+        ) : view === "links" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Links</h2>
+            </header>
+
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="max-w-2xl mx-auto p-4 md:p-6">
+                <LinksView
+                  entries={entries}
+                  loading={loading}
+                  createEntry={createEntry}
+                  deleteEntry={deleteEntry}
+                  onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
+                />
               </div>
             </ScrollArea>
           </>

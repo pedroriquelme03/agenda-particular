@@ -3,7 +3,14 @@
 import { useCallback, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarPlus, ChevronLeft, Mic, NotebookPen, Square } from "lucide-react";
+import {
+  CalendarPlus,
+  ChevronLeft,
+  Link2,
+  Mic,
+  NotebookPen,
+  Square,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,10 +27,11 @@ type Screen = "home" | "note" | "appointment";
 
 interface PwaHomeProps {
   createEntry: CreateEntry;
+  onOpenLinks: () => void;
   nav: React.ReactNode;
 }
 
-export function PwaHome({ createEntry, nav }: PwaHomeProps) {
+export function PwaHome({ createEntry, onOpenLinks, nav }: PwaHomeProps) {
   const [screen, setScreen] = useState<Screen>("home");
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -83,6 +91,13 @@ export function PwaHome({ createEntry, nav }: PwaHomeProps) {
           >
             <CalendarPlus className="h-12 w-12" />
             <span className="text-lg font-semibold">Compromisso</span>
+          </button>
+          <button
+            onClick={onOpenLinks}
+            className="col-span-2 flex aspect-[4/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+          >
+            <Link2 className="h-8 w-8" />
+            <span className="text-lg font-semibold">Links</span>
           </button>
         </div>
       </main>

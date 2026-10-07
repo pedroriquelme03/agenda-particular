@@ -1,6 +1,12 @@
 "use client";
 
-import { CalendarDays, Home, KanbanSquare, LayoutDashboard } from "lucide-react";
+import {
+  CalendarDays,
+  Home,
+  KanbanSquare,
+  LayoutDashboard,
+  Link2,
+} from "lucide-react";
 import type { View } from "@/components/sidebar";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +24,7 @@ const pages = [
   { value: "home" as const, label: "Início", icon: Home },
   { value: "entries" as const, label: "Anotações", icon: LayoutDashboard },
   { value: "calendar" as const, label: "Calendário", icon: CalendarDays },
+  { value: "links" as const, label: "Links", icon: Link2 },
   { value: "trello" as const, label: "Trello", icon: KanbanSquare },
 ];
 

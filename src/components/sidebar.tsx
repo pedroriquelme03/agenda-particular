@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { InstallButton } from "@/components/pwa";
 
-export type View = "entries" | "calendar" | "trello";
+export type View = "entries" | "calendar" | "links" | "trello";
 
 interface SidebarProps {
   view: View;

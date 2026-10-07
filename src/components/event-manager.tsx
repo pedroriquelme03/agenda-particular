@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Toast, type ToastMessage } from "@/components/toast";
 import { cn } from "@/lib/utils";
 
 export interface Event {
@@ -94,6 +95,14 @@ function nextFullHour() {
   return date;
 }
 
+// Start time suggested for a new appointment on a given day.
+function defaultTimeOn(day: Date) {
+  if (isSameDay(day, new Date())) return nextFullHour();
+  const date = new Date(day);
+  date.setHours(9, 0, 0, 0);
+  return date;
+}
+
 export function EventManager({
   events,
   onEventCreate,
@@ -116,6 +125,32 @@ export function EventManager({
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   // Off: only what is still to do. On: the history of what was checked off.
   const [showDone, setShowDone] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const dayPanelRef = useRef<HTMLDivElement>(null);
+
+  // The day's list sits below the month grid, so bring it into view when a day is tapped.
+  useEffect(() => {
+    if (selectedDay) {
+      dayPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedDay]);
+
+  const toggleDone = onEventToggleDone
+    ? (id: string, done: boolean) => {
+        onEventToggleDone(id, done);
+        setToast({
+          id: Date.now(),
+          text: done ? "Compromisso concluído" : "Compromisso reaberto",
+          ...(done && {
+            actionLabel: "Desfazer",
+            onAction: () => {
+              onEventToggleDone(id, false);
+              setToast(null);
+            },
+          }),
+        });
+      }
+    : undefined;
 
   const isDialogOpen = newEvent !== null || selectedEvent !== null;
 
@@ -367,17 +402,39 @@ export function EventManager({
             onDayClick={setSelectedDay}
           />
           {selectedDay && (
-            <ListView
-              events={filteredEvents.filter((event) =>
-                isSameDay(event.startTime, selectedDay)
-              )}
-              onEventClick={setSelectedEvent}
-              onToggleDone={onEventToggleDone}
-              getColorClasses={getColorClasses}
-              heading={selectedDay}
-              emptyText="Nada registrado neste dia"
-              ascending
-            />
+            <div ref={dayPanelRef} className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold capitalize">
+                  {format(selectedDay, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                </h3>
+                {onEventCreate && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setNewEvent({
+                        title: "",
+                        description: "",
+                        startTime: defaultTimeOn(selectedDay),
+                      })
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                    Novo compromisso
+                  </Button>
+                )}
+              </div>
+              <ListView
+                events={filteredEvents.filter((event) =>
+                  isSameDay(event.startTime, selectedDay)
+                )}
+                onEventClick={setSelectedEvent}
+                onToggleDone={toggleDone}
+                getColorClasses={getColorClasses}
+                singleDay
+                emptyText="Nada registrado neste dia"
+                ascending
+              />
+            </div>
           )}
         </>
       )}
@@ -387,7 +444,7 @@ export function EventManager({
         <ListView
           events={filteredEvents}
           onEventClick={setSelectedEvent}
-          onToggleDone={onEventToggleDone}
+          onToggleDone={toggleDone}
           getColorClasses={getColorClasses}
         />
       )}
@@ -517,6 +574,13 @@ export function EventManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Toast
+        toast={toast}
+        onDismiss={(id) =>
+          setToast((current) => (current?.id === id ? null : current))
+        }
+      />
     </div>
   );
 }
@@ -792,13 +856,13 @@ function ListView({
   onEventClick,
   getColorClasses,
   onToggleDone,
-  heading,
+  singleDay = false,
   emptyText = "Nada encontrado",
   ascending = false,
 }: Pick<ViewProps, "events" | "onEventClick" | "getColorClasses"> & {
   onToggleDone?: (id: string, done: boolean) => void;
-  // Shown as the title when the list is for a single day, even if it is empty.
-  heading?: Date;
+  // The list is for one day whose title is shown elsewhere: no date headers.
+  singleDay?: boolean;
   emptyText?: string;
   ascending?: boolean;
 }) {
@@ -821,16 +885,13 @@ function ListView({
   return (
     <div className="rounded-xl border bg-card p-3 sm:p-4">
       <div className="space-y-6">
-        {heading && events.length === 0 && (
-          <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
-            {format(heading, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
-          </h3>
-        )}
         {groups.map((group) => (
           <div key={group.date.toISOString()} className="space-y-3">
-            <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
-              {format(group.date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
-            </h3>
+            {!singleDay && (
+              <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
+                {format(group.date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </h3>
+            )}
             <div className="space-y-2">
               {group.events.map((event) => (
                 <div
@@ -914,7 +975,7 @@ function ListView({
           <div
             className={cn(
               "text-center text-sm text-muted-foreground sm:text-base",
-              heading ? "py-4" : "py-12"
+              singleDay ? "py-4" : "py-12"
             )}
           >
             {emptyText}
