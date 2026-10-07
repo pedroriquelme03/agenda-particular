@@ -6,6 +6,10 @@ const PROMPT =
   "Transcreva este áudio em português do Brasil. Responda somente com o texto falado, " +
   "com pontuação, sem comentários nem aspas. Se não houver fala, responda com nada.";
 
+// Transcribing needs no reasoning; the default thinking level only adds delay.
+const FAST_CONFIG = { temperature: 0, thinkingConfig: { thinkingLevel: "low" } };
+const PLAIN_CONFIG = { temperature: 0 };
+
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 }
@@ -35,32 +39,30 @@ export async function POST(request: Request) {
     return Response.json({ error: "Áudio longo demais." }, { status: 413 });
   }
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+  const contents = [
     {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: PROMPT },
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: audio.toString("base64"),
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0 },
-      }),
-    }
-  );
+      parts: [
+        { text: PROMPT },
+        { inline_data: { mime_type: mimeType, data: audio.toString("base64") } },
+      ],
+    },
+  ];
+  const generate = (generationConfig: object) =>
+    fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({ contents, generationConfig }),
+      }
+    );
+
+  let response = await generate(FAST_CONFIG);
+  // A model that rejects the thinking setting still transcribes without it.
+  if (response.status === 400) response = await generate(PLAIN_CONFIG);
 
   if (!response.ok) {
     console.error(
