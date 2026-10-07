@@ -19,7 +19,7 @@ import { TasksView } from "@/components/tasks-view";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { LogOut, Plus, Settings } from "lucide-react";
-import { AuthScreen } from "@/components/auth-screen";
+import { AuthScreen, NewPasswordScreen } from "@/components/auth-screen";
 import { disablePush } from "@/components/notifications-button";
 import { useSession } from "@/hooks/use-session";
 import { supabase } from "@/lib/supabase";
@@ -30,10 +30,12 @@ import type { Entry } from "@/lib/types";
 // Signed-out visitors get the login; the agenda only mounts for an account, and
 // remounts when the account changes so nothing from the previous one lingers.
 export default function Home() {
-  const { session, loading } = useSession();
+  const { session, loading, recovering, finishRecovery } = useSession();
 
   if (loading) return null;
   if (!session) return <AuthScreen />;
+  // Arrived from the reset e-mail: choose the new password before anything else.
+  if (recovering) return <NewPasswordScreen onDone={finishRecovery} />;
 
   return (
     <AgendaApp
