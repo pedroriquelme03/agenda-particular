@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { format, isSameDay } from "date-fns";
+import { addMonths, format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Calendar,
@@ -299,19 +299,13 @@ export function EventManager({
     if (view === "list") setView("day");
   };
 
+  // The arrows always move a month at a time, whatever the view.
   const navigateDate = (direction: "prev" | "next") => {
-    const step = direction === "next" ? 1 : -1;
-    setCurrentDate((prev) => {
-      const newDate = new Date(prev);
-      if (view === "month") {
-        newDate.setMonth(prev.getMonth() + step, 1);
-      } else if (view === "week") {
-        newDate.setDate(prev.getDate() + step * 7);
-      } else if (view === "day") {
-        newDate.setDate(prev.getDate() + step);
-      }
-      return newDate;
-    });
+    setCurrentDate((prev) => addMonths(prev, direction === "next" ? 1 : -1));
+    // The day picked before belongs to the month being left.
+    setSelectedDay(null);
+    // The full list has no month to move through.
+    if (view === "list") setView("month");
   };
 
   const getColorClasses = useCallback(
@@ -347,7 +341,7 @@ export function EventManager({
               variant="outline"
               size="icon"
               onClick={() => navigateDate("prev")}
-              aria-label="Anterior"
+              aria-label="Mês anterior"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -379,7 +373,7 @@ export function EventManager({
               variant="outline"
               size="icon"
               onClick={() => navigateDate("next")}
-              aria-label="Próximo"
+              aria-label="Próximo mês"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

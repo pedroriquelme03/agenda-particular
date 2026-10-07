@@ -128,19 +128,26 @@
     @apply font-sans;
   }
 
-  /* No sideways scrolling anywhere: the page never pans or bounces
-     horizontally, and no scroll container scrolls on the x axis. */
+  /* The page itself never scrolls or bounces, in any direction: the app is
+     pinned to the screen and only its inner lists scroll (vertically). This is
+     what keeps the bottom bar still on iOS. */
   html,
   body {
     max-width: 100%;
-    overflow-x: hidden;
-    overscroll-behavior-x: none;
+    overflow: hidden;
+    overscroll-behavior: none;
     touch-action: pan-y pinch-zoom;
+  }
+  body {
+    position: fixed;
+    inset: 0;
   }
   * {
     overscroll-behavior-x: none;
   }
   [data-slot="scroll-area-viewport"] {
     overflow-x: hidden !important;
+    /* Reaching the end of a list must not drag the page along. */
+    overscroll-behavior-y: contain;
   }
 }
