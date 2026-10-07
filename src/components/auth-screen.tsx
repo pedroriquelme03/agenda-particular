@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,29 @@ function translateError(message: string) {
   return "Não foi possível continuar. Tente de novo.";
 }
 
+// Password field with an eye button to show or hide what was typed.
+function PasswordInput(props: React.ComponentProps<typeof Input>) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <Input
+        {...props}
+        type={visible ? "text" : "password"}
+        className="h-12 pr-12 text-base"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((prev) => !prev)}
+        aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+        className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-muted-foreground"
+      >
+        {visible ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+      </button>
+    </div>
+  );
+}
+
 function AuthLayout({
   subtitle,
   children,
@@ -50,6 +74,7 @@ function AuthLayout({
 
 export function AuthScreen() {
   const [mode, setMode] = useState<Mode>("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,6 +83,7 @@ export function AuthScreen() {
 
   const canSubmit =
     !!email.trim() &&
+    (mode !== "signup" || !!name.trim()) &&
     (mode === "forgot" || password.length >= MIN_PASSWORD_LENGTH) &&
     !busy;
 
@@ -84,10 +110,21 @@ export function AuthScreen() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          // Shown in the greeting on the home screen.
+          data: { name: name.trim() },
+        },
       });
       if (signUpError) {
         setError(translateError(signUpError.message));
+      } else if (data.user && data.user.identities?.length === 0) {
+        // Supabase pretends to succeed for an e-mail that already has an
+        // account, and sends nothing; an empty identity list is how it shows.
+        setError(
+          'Este e-mail já tem uma conta. Entre com ela ou use "Esqueci minha senha".'
+        );
+        setMode("signin");
       } else if (!data.session) {
         // The project requires e-mail confirmation before the first sign-in.
         setNotice(
@@ -145,6 +182,20 @@ export function AuthScreen() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {mode === "signup" && (
+          <div className="space-y-2">
+            <Label htmlFor="auth-name">Nome</Label>
+            <Input
+              id="auth-name"
+              autoComplete="given-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Como quer ser chamado"
+              className="h-12 text-base"
+            />
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="auth-email">E-mail</Label>
           <Input
@@ -162,14 +213,12 @@ export function AuthScreen() {
         {mode !== "forgot" && (
           <div className="space-y-2">
             <Label htmlFor="auth-password">Senha</Label>
-            <Input
+            <PasswordInput
               id="auth-password"
-              type="password"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Pelo menos 6 caracteres"
-              className="h-12 text-base"
             />
           </div>
         )}
@@ -235,15 +284,13 @@ export function NewPasswordScreen({ onDone }: { onDone: () => void }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="auth-new-password">Nova senha</Label>
-          <Input
+          <PasswordInput
             id="auth-new-password"
-            type="password"
             autoComplete="new-password"
             autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Pelo menos 6 caracteres"
-            className="h-12 text-base"
           />
         </div>
 

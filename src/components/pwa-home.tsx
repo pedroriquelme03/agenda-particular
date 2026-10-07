@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { OfflineBanner, useVisibleArea } from "@/components/pwa";
 import { NotificationsButton } from "@/components/notifications-button";
 import { useDictation } from "@/hooks/use-dictation";
-import type { Entry } from "@/lib/types";
+import type { Entry, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CreateEntry = (
@@ -29,7 +29,10 @@ type CreateEntry = (
 type Screen = "home" | "note" | "appointment";
 
 interface PwaHomeProps {
+  // Name given at sign-up; accounts created before that have none.
+  userName?: string;
   entries: Entry[];
+  tasks: Task[];
   createEntry: CreateEntry;
   onOpenLinks: () => void;
   onOpenTasks: () => void;
@@ -41,7 +44,9 @@ const homeButton =
   "flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl shadow-sm transition-transform active:scale-95";
 
 export function PwaHome({
+  userName,
   entries,
+  tasks,
   createEntry,
   onOpenLinks,
   onOpenTasks,
@@ -77,25 +82,59 @@ export function PwaHome({
   }
 
   const today = new Date();
-  const todayAppointments = entries
-    .filter(
-      (entry) =>
-        entry.is_reminder &&
-        !!entry.reminder_date &&
-        !entry.completed_at &&
-        isSameDay(new Date(entry.reminder_date), today)
-    )
-    .sort(
-      (a, b) =>
-        new Date(a.reminder_date!).getTime() - new Date(b.reminder_date!).getTime()
-    );
+  // What is on for today: appointments and task deadlines, in time order.
+  // A deadline without a time of day comes first.
+  const todayItems = [
+    ...entries
+      .filter(
+        (entry) =>
+          entry.is_reminder &&
+          !!entry.reminder_date &&
+          !entry.completed_at &&
+          isSameDay(new Date(entry.reminder_date), today)
+      )
+      .map((entry) => {
+        const start = new Date(entry.reminder_date!);
+        return {
+          id: entry.id,
+          kind: "Compromisso",
+          sortKey: start.getTime(),
+          time:
+            format(start, "HH:mm") +
+            (entry.reminder_end_date
+              ? " – " + format(new Date(entry.reminder_end_date), "HH:mm")
+              : ""),
+          title: entry.title || "Compromisso",
+          detail: entry.content,
+        };
+      }),
+    ...tasks
+      .filter(
+        (task) =>
+          !task.completed_at &&
+          !!task.due_date &&
+          isSameDay(new Date(task.due_date + "T00:00"), today)
+      )
+      .map((task) => ({
+        id: task.id,
+        kind: "Tarefa",
+        sortKey: new Date(
+          task.due_date + "T" + (task.due_time || "00:00")
+        ).getTime(),
+        time: task.due_time ? task.due_time.slice(0, 5) : "Hoje",
+        title: task.title,
+        detail: task.project || task.description,
+      })),
+  ].sort((x, y) => x.sortKey - y.sortKey);
 
   return (
     <div className="flex h-full w-full flex-col">
       <OfflineBanner />
       <header className="flex items-start justify-between gap-3 px-5 pt-8 pb-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">Minha Agenda</h1>
+          <h1 className="truncate text-2xl font-bold tracking-tight">
+            {userName ? `Olá ${userName.trim().split(/s+/)[0]}` : "Minha Agenda"}
+          </h1>
           <p className="text-sm text-muted-foreground capitalize">
             {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
           </p>
@@ -114,31 +153,39 @@ export function PwaHome({
 
       <section className="flex min-h-0 flex-1 flex-col px-5">
         <h2 className="pb-2 text-sm font-semibold text-muted-foreground">
-          Compromissos de hoje
+          Hoje
         </h2>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {todayAppointments.length === 0 ? (
+          {todayItems.length === 0 ? (
             <p className="py-3 text-sm text-muted-foreground">
-              Nenhum compromisso hoje.
+              Nenhum compromisso ou tarefa hoje.
             </p>
           ) : (
             <ul className="divide-y rounded-xl border">
-              {todayAppointments.map((entry) => (
-                <li key={entry.id} className="flex items-start gap-3 px-3 py-2.5">
+              {todayItems.map((item) => (
+                <li key={item.kind + item.id} className="flex items-start gap-3 px-3 py-2.5">
                   <span className="w-[5.5rem] shrink-0 text-sm font-semibold tabular-nums">
-                    {format(new Date(entry.reminder_date!), "HH:mm")}
-                    {entry.reminder_end_date &&
-                      ` – ${format(new Date(entry.reminder_end_date), "HH:mm")}`}
+                    {item.time}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">
-                      {entry.title || "Compromisso"}
+                      {item.title}
                     </span>
-                    {entry.content && (
+                    {item.detail && (
                       <span className="block truncate text-xs text-muted-foreground">
-                        {entry.content}
+                        {item.detail}
                       </span>
                     )}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                      item.kind === "Tarefa"
+                        ? "border-foreground bg-foreground text-background"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    {item.kind}
                   </span>
                 </li>
               ))}

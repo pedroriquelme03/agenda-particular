@@ -40,7 +40,7 @@ export function BottomNav({
   return (
     <nav
       className={cn(
-        "flex shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]",
+        "flex shrink-0 border-t bg-background pb-[calc(15px+env(safe-area-inset-bottom))]",
         className
       )}
     >

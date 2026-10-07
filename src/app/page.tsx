@@ -40,6 +40,11 @@ export default function Home() {
   return (
     <AgendaApp
       key={session.user.id}
+      userName={
+        typeof session.user.user_metadata?.name === "string"
+          ? session.user.user_metadata.name
+          : undefined
+      }
       onSignOut={async () => {
         await disablePush();
         await supabase.auth.signOut();
@@ -48,7 +53,13 @@ export default function Home() {
   );
 }
 
-function AgendaApp({ onSignOut }: { onSignOut: () => void }) {
+function AgendaApp({
+  userName,
+  onSignOut,
+}: {
+  userName?: string;
+  onSignOut: () => void;
+}) {
   const {
     entries,
     loading,
@@ -144,7 +155,9 @@ function AgendaApp({ onSignOut }: { onSignOut: () => void }) {
   if (standalone && !showAgenda) {
     return (
       <PwaHome
+        userName={userName}
         entries={entries}
+        tasks={tasksState.tasks}
         createEntry={createEntry}
         onOpenLinks={() => navigate("links")}
         onOpenTasks={() => navigate("tasks")}
