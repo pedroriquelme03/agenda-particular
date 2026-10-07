@@ -8,6 +8,7 @@ import { EntryCard } from "@/components/entry-card";
 import { TrelloConfigDialog, TrelloSendDialog } from "@/components/trello-sync";
 import { TrelloBoards } from "@/components/trello-boards";
 import { useEntries } from "@/hooks/use-entries";
+import { useTasks } from "@/hooks/use-tasks";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineBanner, useStandalone } from "@/components/pwa";
 import { NoteScreen, PwaHome } from "@/components/pwa-home";
@@ -15,6 +16,8 @@ import { BottomNav, type Page } from "@/components/bottom-nav";
 import { CalendarView } from "@/components/calendar-view";
 import { LinksView } from "@/components/links-view";
 import { TasksView } from "@/components/tasks-view";
+import { ConfirmDelete } from "@/components/confirm-delete";
+import { Toast, type ToastMessage } from "@/components/toast";
 import { Plus, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { isConfigured } from "@/lib/trello";
@@ -34,12 +37,27 @@ export default function Home() {
     refetch,
   } = useEntries();
 
+  const tasksState = useTasks();
+
   const [view, setView] = useState<View>("entries");
   const [trelloConfigOpen, setTrelloConfigOpen] = useState(false);
   const [trelloSendEntry, setTrelloSendEntry] = useState<Entry | null>(null);
   const [trelloConnected, setTrelloConnected] = useState(false);
   const standalone = useStandalone();
   const [noteOpen, setNoteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  const requestDelete = (id: string) =>
+    setDeleteTarget(entries.find((entry) => entry.id === id) ?? null);
+
+  const confirmDelete = async () => {
+    const entry = deleteTarget;
+    setDeleteTarget(null);
+    if (entry && (await deleteEntry(entry.id))) {
+      setToast({ id: Date.now(), text: "Apagado" });
+    }
+  };
   const [showAgenda, setShowAgenda] = useState(false);
 
   useEffect(() => {
@@ -169,7 +187,7 @@ export default function Home() {
                       <EntryCard
                         key={entry.id}
                         entry={entry}
-                        onDelete={deleteEntry}
+                        onDelete={requestDelete}
                         onTrelloSend={
                           trelloConnected ? setTrelloSendEntry : undefined
                         }
@@ -208,6 +226,9 @@ export default function Home() {
                     createEntry={createEntry}
                     updateEntry={updateEntry}
                     deleteEntry={deleteEntry}
+                    tasks={tasksState.tasks}
+                    updateTask={tasksState.updateTask}
+                    deleteTask={tasksState.deleteTask}
                   />
                 )}
               </div>
@@ -223,7 +244,7 @@ export default function Home() {
               entries={entries}
               loading={loading}
               createEntry={createEntry}
-              deleteEntry={deleteEntry}
+              deleteEntry={requestDelete}
               onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
             />
           </>
@@ -233,7 +254,7 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Tarefas</h2>
             </header>
 
-            <TasksView />
+            <TasksView {...tasksState} />
           </>
         ) : (
           <>
@@ -260,6 +281,26 @@ export default function Home() {
           onSaved={() => setNoteOpen(false)}
         />
       )}
+
+      <ConfirmDelete
+        label={
+          deleteTarget
+            ? deleteTarget.title ||
+              deleteTarget.content.slice(0, 40) ||
+              deleteTarget.link_url ||
+              "Este item"
+            : null
+        }
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
+
+      <Toast
+        toast={toast}
+        onDismiss={(id) =>
+          setToast((current) => (current?.id === id ? null : current))
+        }
+      />
 
       <TrelloConfigDialog
         open={trelloConfigOpen}

@@ -27,6 +27,8 @@ export interface Task {
   project: string | null;
   // Plain date, "yyyy-MM-dd".
   due_date: string | null;
+  // Optional time of day for the deadline, "HH:mm:ss".
+  due_time?: string | null;
   value: number | null;
   completed_at: string | null;
   created_at: string;

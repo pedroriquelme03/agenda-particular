@@ -2,9 +2,15 @@
 
 import { useMemo } from "react";
 import { EventManager, type Event, type EventDraft } from "@/components/event-manager";
-import type { Entry, EntryType } from "@/lib/types";
+import { format } from "date-fns";
+import type { Entry, EntryType, Task } from "@/lib/types";
 
 const APPOINTMENT = "Compromisso";
+const TASK = "Tarefa";
+// Entries and tasks live in different tables; the prefix tells them apart.
+const TASK_PREFIX = "task:";
+// Where a deadline without a time of day sits in the hourly views.
+const TASK_HOUR = 9;
 
 const typeCategories: Record<EntryType, string> = {
   text: "Anotação",
@@ -15,6 +21,7 @@ const typeCategories: Record<EntryType, string> = {
 
 const categoryColors: Record<string, string> = {
   [APPOINTMENT]: "blue",
+  [TASK]: "red",
   Anotação: "green",
   Voz: "purple",
   Imagem: "orange",
@@ -51,6 +58,28 @@ function toEvent(entry: Entry): Event {
   };
 }
 
+// Only tasks with a deadline have a day to sit on.
+function taskToEvent(task: Task): Event {
+  const startTime = new Date(`${task.due_date}T${task.due_time || "00:00"}`);
+  if (!task.due_time) startTime.setHours(TASK_HOUR, 0, 0, 0);
+
+  return {
+    id: TASK_PREFIX + task.id,
+    title: task.title,
+    description: task.description,
+    startTime,
+    endTime: new Date(startTime.getTime() + HOUR_MS),
+    color: categoryColors[TASK],
+    category: TASK,
+    tags: task.project ? [task.project] : [],
+    movable: true,
+    dateOnly: !task.due_time,
+    fixedDuration: true,
+    checkable: true,
+    done: !!task.completed_at,
+  };
+}
+
 interface CalendarViewProps {
   entries: Entry[];
   createEntry: (
@@ -58,6 +87,9 @@ interface CalendarViewProps {
   ) => Promise<Entry | null>;
   updateEntry: (id: string, updates: Partial<Entry>) => Promise<Entry | null>;
   deleteEntry: (id: string) => Promise<boolean>;
+  tasks: Task[];
+  updateTask: (id: string, updates: Partial<Task>) => Promise<Task | null>;
+  deleteTask: (id: string) => Promise<boolean>;
 }
 
 export function CalendarView({
@@ -65,8 +97,17 @@ export function CalendarView({
   createEntry,
   updateEntry,
   deleteEntry,
+  tasks,
+  updateTask,
+  deleteTask,
 }: CalendarViewProps) {
-  const events = useMemo(() => entries.map(toEvent), [entries]);
+  const events = useMemo(
+    () => [
+      ...entries.map(toEvent),
+      ...tasks.filter((task) => task.due_date).map(taskToEvent),
+    ],
+    [entries, tasks]
+  );
 
   const handleCreate = (draft: EventDraft) => {
     createEntry({
@@ -87,6 +128,35 @@ export function CalendarView({
   const handleUpdate = (id: string, changes: Partial<Event>) => {
     const current = events.find((event) => event.id === id);
     if (!current) return;
+
+    if (id.startsWith(TASK_PREFIX)) {
+      const taskUpdates: Partial<Task> = {};
+      if (changes.title !== undefined && changes.title.trim() !== current.title) {
+        taskUpdates.title = changes.title.trim() || current.title;
+      }
+      if (
+        changes.description !== undefined &&
+        changes.description !== current.description
+      ) {
+        taskUpdates.description = changes.description;
+      }
+      if (changes.startTime) {
+        const dueDate = format(changes.startTime, "yyyy-MM-dd");
+        if (dueDate !== format(current.startTime, "yyyy-MM-dd")) {
+          taskUpdates.due_date = dueDate;
+        }
+        if (
+          !current.dateOnly &&
+          changes.startTime.getTime() !== current.startTime.getTime()
+        ) {
+          taskUpdates.due_time = format(changes.startTime, "HH:mm:ss");
+        }
+      }
+      if (Object.keys(taskUpdates).length > 0) {
+        updateTask(id.slice(TASK_PREFIX.length), taskUpdates);
+      }
+      return;
+    }
 
     const updates: Partial<Entry> = {};
     if (changes.title !== undefined && changes.title !== current.title) {
@@ -123,12 +193,19 @@ export function CalendarView({
       events={events}
       onEventCreate={handleCreate}
       onEventUpdate={handleUpdate}
-      onEventDelete={deleteEntry}
-      onEventToggleDone={(id, done) =>
-        updateEntry(id, {
-          completed_at: done ? new Date().toISOString() : null,
-        })
+      onEventDelete={(id) =>
+        id.startsWith(TASK_PREFIX)
+          ? deleteTask(id.slice(TASK_PREFIX.length))
+          : deleteEntry(id)
       }
+      onEventToggleDone={(id, done) => {
+        const completed_at = done ? new Date().toISOString() : null;
+        if (id.startsWith(TASK_PREFIX)) {
+          updateTask(id.slice(TASK_PREFIX.length), { completed_at });
+        } else {
+          updateEntry(id, { completed_at });
+        }
+      }}
     />
   );
 }

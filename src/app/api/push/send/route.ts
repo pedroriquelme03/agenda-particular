@@ -15,7 +15,7 @@ const REMINDERS = [
 ] as const;
 
 const TIME_ZONE = process.env.APP_TIME_ZONE || "America/Sao_Paulo";
-// Tasks only have a deadline day; they count as due at this local time.
+// A task deadline without a time of day counts as due at this local time.
 const TASK_DUE_TIME = "09:00:00";
 const UTC_OFFSET = process.env.APP_UTC_OFFSET || "-03:00";
 
@@ -89,14 +89,16 @@ export async function GET() {
     new Date(now + offsetDays * 24 * HOUR_MS).toISOString().slice(0, 10);
   const { data: tasks, error: tasksError } = await supabase
     .from("tasks")
-    .select("id, title, due_date")
+    .select("id, title, due_date, due_time")
     .is("completed_at", null)
     .gte("due_date", day(-1))
     .lte("due_date", day(2));
   if (tasksError) console.error("Error loading tasks:", tasksError);
 
   for (const task of tasks ?? []) {
-    const start = new Date(`${task.due_date}T${TASK_DUE_TIME}${UTC_OFFSET}`);
+    const start = new Date(
+      `${task.due_date}T${task.due_time || TASK_DUE_TIME}${UTC_OFFSET}`
+    );
     for (const { kind, label } of dueKinds(start, now)) {
       due.push({
         type: "task",
@@ -104,7 +106,7 @@ export async function GET() {
         kind,
         targetAt: start,
         title: `Tarefa vence ${label}`,
-        body: `${task.title} — prazo ${dateFormat.format(start)}`,
+        body: `${task.title} — prazo ${(task.due_time ? dateTimeFormat : dateFormat).format(start)}`,
       });
     }
   }

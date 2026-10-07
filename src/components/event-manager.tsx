@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,10 @@ export interface Event {
   tags?: string[];
   // Whether the date can be changed (dragging or editing).
   movable?: boolean;
+  // The item has a day but no time of day (a task deadline).
+  dateOnly?: boolean;
+  // The item is a moment, not a period: no end time to set (a task deadline).
+  fixedDuration?: boolean;
   // Whether it can be checked off as done, and whether it already was.
   checkable?: boolean;
   done?: boolean;
@@ -109,7 +114,9 @@ function withTime(day: Date, time: string) {
 }
 
 const timeRange = (event: Event) =>
-  event.hasEnd
+  event.dateOnly
+    ? "Prazo"
+    : event.hasEnd
     ? formatTime(event.startTime) + " – " + formatTime(event.endTime)
     : formatTime(event.startTime);
 
@@ -154,6 +161,7 @@ export function EventManager({
   // Off: only what is still to do. On: the history of what was checked off.
   const [showDone, setShowDone] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
   const dayPanelRef = useRef<HTMLDivElement>(null);
 
   // The day's list sits below the month grid, so bring it into view when a day is tapped.
@@ -168,7 +176,7 @@ export function EventManager({
         onEventToggleDone(id, done);
         setToast({
           id: Date.now(),
-          text: done ? "Compromisso concluído" : "Compromisso reaberto",
+          text: done ? "Marcado como concluído" : "Reaberto",
           ...(done && {
             actionLabel: "Desfazer",
             onAction: () => {
@@ -229,9 +237,17 @@ export function EventManager({
     closeDialog();
   };
 
-  const handleDeleteEvent = (id: string) => {
-    onEventDelete?.(id);
+  // Deleting asks first: the details close and the confirmation takes their place.
+  const requestDelete = (event: Event) => {
+    setDeleteTarget(event);
     closeDialog();
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    onEventDelete?.(deleteTarget.id);
+    setDeleteTarget(null);
+    setToast({ id: Date.now(), text: "Apagado" });
   };
 
   const handleDrop = useCallback(
@@ -541,20 +557,32 @@ export function EventManager({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="event-start">Início</Label>
+              <Label htmlFor="event-start">
+                {!newEvent && selectedEvent?.dateOnly ? "Prazo" : "Início"}
+              </Label>
               <Input
                 id="event-start"
-                type="datetime-local"
+                type={
+                  !newEvent && selectedEvent?.dateOnly ? "date" : "datetime-local"
+                }
                 disabled={!newEvent && !selectedEvent?.movable}
                 value={
                   newEvent
                     ? toInputValue(newEvent.startTime)
                     : selectedEvent
-                      ? toInputValue(selectedEvent.startTime)
+                      ? selectedEvent.dateOnly
+                        ? format(selectedEvent.startTime, "yyyy-MM-dd")
+                        : toInputValue(selectedEvent.startTime)
                       : ""
                 }
                 onChange={(e) => {
-                  const date = new Date(e.target.value);
+                  // A bare "yyyy-MM-dd" would parse as UTC; add the time to keep it local.
+                  const date =
+                    !newEvent && selectedEvent?.dateOnly
+                      ? new Date(
+                          e.target.value + "T" + formatTime(selectedEvent.startTime)
+                        )
+                      : new Date(e.target.value);
                   if (Number.isNaN(date.getTime())) return;
                   if (newEvent) {
                     setNewEvent({
@@ -582,7 +610,7 @@ export function EventManager({
               />
             </div>
 
-            {(newEvent || selectedEvent?.movable) && (
+            {(newEvent || (selectedEvent?.movable && !selectedEvent.fixedDuration)) && (
               <div className="space-y-2">
                 <Label htmlFor="event-end">Término (opcional)</Label>
                 <Input
@@ -642,7 +670,7 @@ export function EventManager({
             {!newEvent && onEventDelete && (
               <Button
                 variant="destructive"
-                onClick={() => selectedEvent && handleDeleteEvent(selectedEvent.id)}
+                onClick={() => selectedEvent && requestDelete(selectedEvent)}
               >
                 Excluir
               </Button>
@@ -659,6 +687,12 @@ export function EventManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDelete
+        label={deleteTarget ? deleteTarget.title : null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
 
       <Toast
         toast={toast}

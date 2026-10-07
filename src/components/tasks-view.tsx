@@ -15,8 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Toast, type ToastMessage } from "@/components/toast";
-import { useTasks } from "@/hooks/use-tasks";
+import type { TaskInput, useTasks } from "@/hooks/use-tasks";
 import type { Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -36,11 +37,26 @@ function parseValue(input: string) {
   return Number.isFinite(value) ? value : null;
 }
 
-export function TasksView() {
-  const { tasks, loading, createTask, updateTask, deleteTask } = useTasks();
+// The task list is owned by the page, which also shows it in the calendar.
+export function TasksView({
+  tasks,
+  loading,
+  createTask,
+  updateTask,
+  deleteTask,
+}: ReturnType<typeof useTasks>) {
   const [formOpen, setFormOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+
+  const confirmDelete = async () => {
+    const task = deleteTarget;
+    setDeleteTarget(null);
+    if (task && (await deleteTask(task.id))) {
+      setToast({ id: Date.now(), text: "Tarefa apagada" });
+    }
+  };
 
   const visible = tasks.filter((task) => !!task.completed_at === showDone);
 
@@ -90,7 +106,7 @@ export function TasksView() {
               key={task.id}
               task={task}
               onToggleDone={() => toggleDone(task)}
-              onDelete={() => deleteTask(task.id)}
+              onDelete={() => setDeleteTarget(task)}
             />
           ))}
         </div>
@@ -124,6 +140,12 @@ export function TasksView() {
         </DialogContent>
       </Dialog>
 
+      <ConfirmDelete
+        label={deleteTarget ? deleteTarget.title : null}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
+
       <Toast
         toast={toast}
         onDismiss={(id) =>
@@ -146,7 +168,13 @@ function TaskCard({
   const done = !!task.completed_at;
   // due_date is a plain "yyyy-MM-dd"; parseISO keeps it in local time.
   const dueDate = task.due_date ? parseISO(task.due_date) : null;
-  const overdue = !done && !!dueDate && isBefore(dueDate, startOfDay(new Date()));
+  // With a time, it is late once that moment passes; without, after the day ends.
+  const overdue =
+    !done &&
+    !!dueDate &&
+    (task.due_time
+      ? isBefore(parseISO(`${task.due_date}T${task.due_time}`), new Date())
+      : isBefore(dueDate, startOfDay(new Date())));
 
   return (
     <div className="rounded-lg border bg-card p-3 sm:p-4">
@@ -194,6 +222,7 @@ function TaskCard({
               >
                 <CalendarClock className="h-3.5 w-3.5" />
                 {format(dueDate, "dd/MM/yyyy")}
+                {task.due_time && ` às ${task.due_time.slice(0, 5)}`}
                 {overdue && " (atrasada)"}
               </span>
             )}
@@ -223,19 +252,14 @@ function TaskForm({
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (input: {
-    title: string;
-    description: string;
-    project: string | null;
-    due_date: string | null;
-    value: number | null;
-  }) => Promise<boolean>;
+  onSubmit: (input: TaskInput) => Promise<boolean>;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [project, setProject] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [dueTime, setDueTime] = useState("");
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -253,6 +277,7 @@ function TaskForm({
       description: description.trim(),
       project: project.trim() || null,
       due_date: dueDate || null,
+      due_time: dueDate && dueTime ? dueTime : null,
       value: parseValue(value),
     });
     setSaving(false);
@@ -303,6 +328,18 @@ function TaskForm({
           type="date"
           value={dueDate}
           onChange={(e) => setDueDate(e.target.value)}
+          className="block h-12 appearance-none text-base"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="task-due-time">Hora do prazo (opcional)</Label>
+        <Input
+          id="task-due-time"
+          type="time"
+          value={dueTime}
+          onChange={(e) => setDueTime(e.target.value)}
+          disabled={!dueDate}
           className="block h-12 appearance-none text-base"
         />
       </div>

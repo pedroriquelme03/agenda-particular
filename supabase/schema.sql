@@ -26,6 +26,7 @@ create table if not exists tasks (
   description text not null default '',
   project text,
   due_date date,
+  due_time time,
   value numeric(12, 2),
   completed_at timestamptz,
   created_at timestamptz not null default now(),
