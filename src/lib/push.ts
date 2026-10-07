@@ -1,5 +1,4 @@
 import webpush from "web-push";
-import { supabase } from "@/lib/supabase";
 
 export interface PushPayload {
   title: string;
@@ -33,10 +32,12 @@ export function isPushConfigured() {
   return true;
 }
 
+// "gone" means the device dropped the subscription (app removed or permission
+// revoked) and the caller should delete it.
 export async function sendPush(
   subscription: StoredSubscription,
   payload: PushPayload
-) {
+): Promise<"sent" | "gone" | "failed"> {
   try {
     await webpush.sendNotification(
       {
@@ -45,32 +46,11 @@ export async function sendPush(
       },
       JSON.stringify(payload)
     );
-    return true;
+    return "sent";
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode;
-    if (status === 404 || status === 410) {
-      // The device dropped the subscription (app removed or permission revoked).
-      await supabase
-        .from("push_subscriptions")
-        .delete()
-        .eq("endpoint", subscription.endpoint);
-    } else {
-      console.error("Error sending push notification:", status, error);
-    }
-    return false;
+    if (status === 404 || status === 410) return "gone";
+    console.error("Error sending push notification:", status, error);
+    return "failed";
   }
-}
-
-export async function sendPushToAll(payload: PushPayload) {
-  const { data, error } = await supabase
-    .from("push_subscriptions")
-    .select("endpoint, p256dh, auth");
-  if (error) {
-    console.error("Error loading push subscriptions:", error);
-    return 0;
-  }
-  const results = await Promise.all(
-    (data ?? []).map((subscription) => sendPush(subscription, payload))
-  );
-  return results.filter(Boolean).length;
 }

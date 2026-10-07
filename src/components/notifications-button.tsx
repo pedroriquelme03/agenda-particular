@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { authHeader, supabase } from "@/lib/supabase";
 
 type Status = "loading" | "unsupported" | "off" | "busy" | "on" | "denied";
 
@@ -17,12 +18,30 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-function saveSubscription(subscription: PushSubscription, welcome: boolean) {
+async function saveSubscription(subscription: PushSubscription, welcome: boolean) {
   return fetch("/api/push/subscribe", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify({ subscription, welcome }),
   });
+}
+
+// Stops reminders on this device. Called on sign-out, while still signed in,
+// so the next person to use the device does not get this account's reminders.
+export async function disablePush() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager?.getSubscription();
+    if (!subscription) return;
+    await supabase
+      .from("push_subscriptions")
+      .delete()
+      .eq("endpoint", subscription.endpoint);
+    await subscription.unsubscribe();
+  } catch (error) {
+    console.error("Error disabling notifications:", error);
+  }
 }
 
 async function currentStatus(): Promise<Status> {

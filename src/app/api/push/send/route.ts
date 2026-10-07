@@ -1,8 +1,11 @@
 import { supabase } from "@/lib/supabase";
-import { isPushConfigured, sendPushToAll } from "@/lib/push";
+import { isPushConfigured, sendPush, type StoredSubscription } from "@/lib/push";
 
 // Called every 5 minutes by a database cron job. Safe to call at any time:
 // each reminder is recorded before it is sent, so repeats send nothing.
+//
+// It has to read every account's items, which row-level security forbids, so it
+// goes through database functions that only answer to PUSH_CRON_SECRET.
 export const dynamic = "force-dynamic";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -32,9 +35,28 @@ const dateFormat = new Intl.DateTimeFormat("pt-BR", {
   month: "2-digit",
 });
 
+interface CronData {
+  entries: {
+    id: string;
+    user_id: string;
+    title: string | null;
+    content: string;
+    reminder_date: string;
+  }[];
+  tasks: {
+    id: string;
+    user_id: string;
+    title: string;
+    due_date: string;
+    due_time: string | null;
+  }[];
+  subscriptions: (StoredSubscription & { user_id: string })[];
+}
+
 interface DueItem {
   type: "entry" | "task";
   id: string;
+  userId: string;
   kind: "24h" | "1h";
   targetAt: Date;
   title: string;
@@ -50,7 +72,8 @@ function dueKinds(start: Date, now: number) {
 }
 
 export async function GET() {
-  if (!isPushConfigured()) {
+  const secret = process.env.PUSH_CRON_SECRET;
+  if (!isPushConfigured() || !secret) {
     return Response.json(
       { error: "Notificações não configuradas." },
       { status: 500 }
@@ -58,24 +81,32 @@ export async function GET() {
   }
 
   const now = Date.now();
-  const horizon = new Date(now + 24 * HOUR_MS + GRACE_MS).toISOString();
+  // Deadlines are plain dates, so load a day on each side and compare in JS.
+  const day = (offsetDays: number) =>
+    new Date(now + offsetDays * 24 * HOUR_MS).toISOString().slice(0, 10);
+
+  const { data, error } = await supabase.rpc("push_cron_data", {
+    p_secret: secret,
+    p_from: new Date(now).toISOString(),
+    p_to: new Date(now + 24 * HOUR_MS + GRACE_MS).toISOString(),
+    p_date_from: day(-1),
+    p_date_to: day(2),
+  });
+  if (error) {
+    console.error("Error loading reminders:", error);
+    return Response.json({ error: "Falha ao carregar avisos." }, { status: 500 });
+  }
+  const { entries, tasks, subscriptions } = data as CronData;
+
   const due: DueItem[] = [];
 
-  const { data: entries, error: entriesError } = await supabase
-    .from("entries")
-    .select("id, title, content, reminder_date")
-    .eq("is_reminder", true)
-    .is("completed_at", null)
-    .gt("reminder_date", new Date(now).toISOString())
-    .lte("reminder_date", horizon);
-  if (entriesError) console.error("Error loading appointments:", entriesError);
-
-  for (const entry of entries ?? []) {
+  for (const entry of entries) {
     const start = new Date(entry.reminder_date);
     for (const { kind, label } of dueKinds(start, now)) {
       due.push({
         type: "entry",
         id: entry.id,
+        userId: entry.user_id,
         kind,
         targetAt: start,
         title: `Compromisso ${label}`,
@@ -84,18 +115,7 @@ export async function GET() {
     }
   }
 
-  // Deadlines are plain dates, so load a day on each side and compare in JS.
-  const day = (offsetDays: number) =>
-    new Date(now + offsetDays * 24 * HOUR_MS).toISOString().slice(0, 10);
-  const { data: tasks, error: tasksError } = await supabase
-    .from("tasks")
-    .select("id, title, due_date, due_time")
-    .is("completed_at", null)
-    .gte("due_date", day(-1))
-    .lte("due_date", day(2));
-  if (tasksError) console.error("Error loading tasks:", tasksError);
-
-  for (const task of tasks ?? []) {
+  for (const task of tasks) {
     const start = new Date(
       `${task.due_date}T${task.due_time || TASK_DUE_TIME}${UTC_OFFSET}`
     );
@@ -103,6 +123,7 @@ export async function GET() {
       due.push({
         type: "task",
         id: task.id,
+        userId: task.user_id,
         kind,
         targetAt: start,
         title: `Tarefa vence ${label}`,
@@ -113,23 +134,42 @@ export async function GET() {
 
   let sent = 0;
   for (const item of due) {
-    // Recording first makes the insert the lock: a duplicate key means another
-    // run already handled this reminder.
-    const { error } = await supabase.from("push_sent").insert({
-      item_type: item.type,
-      item_id: item.id,
-      kind: item.kind,
-      target_at: item.targetAt.toISOString(),
-    });
-    if (error) {
-      if (error.code !== "23505") console.error("Error recording reminder:", error);
+    // Recording first makes the insert the lock: false means another run
+    // already handled this reminder.
+    const { data: isNew, error: markError } = await supabase.rpc(
+      "push_cron_mark_sent",
+      {
+        p_secret: secret,
+        p_item_type: item.type,
+        p_item_id: item.id,
+        p_kind: item.kind,
+        p_target_at: item.targetAt.toISOString(),
+      }
+    );
+    if (markError) {
+      console.error("Error recording reminder:", markError);
       continue;
     }
-    await sendPushToAll({
-      title: item.title,
-      body: item.body,
-      tag: `${item.type}-${item.id}-${item.kind}`,
-    });
+    if (!isNew) continue;
+
+    // Each reminder goes only to its owner's devices.
+    await Promise.all(
+      subscriptions
+        .filter((subscription) => subscription.user_id === item.userId)
+        .map(async (subscription) => {
+          const result = await sendPush(subscription, {
+            title: item.title,
+            body: item.body,
+            tag: `${item.type}-${item.id}-${item.kind}`,
+          });
+          if (result === "gone") {
+            await supabase.rpc("push_cron_remove_subscription", {
+              p_secret: secret,
+              p_endpoint: subscription.endpoint,
+            });
+          }
+        })
+    );
     sent += 1;
   }
 

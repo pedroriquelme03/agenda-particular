@@ -8,6 +8,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import { authHeader } from "@/lib/supabase";
+
 const noopSubscribe = () => () => {};
 
 // Low bitrate is plenty for speech and keeps the upload small.
@@ -46,7 +48,10 @@ export function useDictation(onText: (text: string) => void) {
     try {
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": audio.type || "audio/webm" },
+        headers: {
+          "Content-Type": audio.type || "audio/webm",
+          ...(await authHeader()),
+        },
         body: audio,
       });
       const data = (await response.json()) as { text?: string; error?: string };

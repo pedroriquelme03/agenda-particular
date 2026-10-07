@@ -1,3 +1,5 @@
+import { getRequestUser } from "@/lib/supabase-server";
+
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 // Stays under the 4.5 MB request limit of the hosting platform.
 const MAX_AUDIO_BYTES = 4 * 1024 * 1024;
@@ -15,6 +17,10 @@ interface GeminiResponse {
 }
 
 export async function POST(request: Request) {
+  if (!(await getRequestUser(request))) {
+    return Response.json({ error: "Faça login para continuar." }, { status: 401 });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return Response.json(

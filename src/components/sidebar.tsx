@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   CalendarDays,
   Settings,
+  LogOut,
   KanbanSquare,
 } from "lucide-react";
 import type { EntryType } from "@/lib/types";
@@ -23,6 +24,7 @@ interface SidebarProps {
   onFilterChange: (filter: EntryType | "all") => void;
   onViewChange: (view: View) => void;
   onSettingsClick: () => void;
+  onSignOut: () => void;
   trelloConnected: boolean;
 }
 
@@ -40,6 +42,7 @@ export function Sidebar({
   onFilterChange,
   onViewChange,
   onSettingsClick,
+  onSignOut,
   trelloConnected,
 }: SidebarProps) {
   // Desktop only: small screens use the bottom bar and the filter chips instead.
@@ -115,6 +118,13 @@ export function Sidebar({
         >
           <Settings className="h-4 w-4" />
           Config Trello
+        </button>
+        <button
+          onClick={onSignOut}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+          Sair
         </button>
       </div>
     </aside>

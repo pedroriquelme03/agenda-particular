@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getRequestUser } from "@/lib/supabase-server";
 import { isPushConfigured, sendPush } from "@/lib/push";
 
 interface SubscribeBody {
@@ -18,6 +18,11 @@ export async function POST(request: Request) {
     );
   }
 
+  const session = await getRequestUser(request);
+  if (!session) {
+    return Response.json({ error: "Faça login para continuar." }, { status: 401 });
+  }
+
   const body = (await request.json().catch(() => null)) as SubscribeBody | null;
   const endpoint = body?.subscription?.endpoint;
   const p256dh = body?.subscription?.keys?.p256dh;
@@ -31,10 +36,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "Inscrição inválida." }, { status: 400 });
   }
 
-  const subscription = { endpoint, p256dh, auth };
-  const { error } = await supabase
-    .from("push_subscriptions")
-    .upsert(subscription, { onConflict: "endpoint" });
+  // The function also moves a device to this account if someone else used it before.
+  const { error } = await session.client.rpc("register_push_subscription", {
+    p_endpoint: endpoint,
+    p_p256dh: p256dh,
+    p_auth: auth,
+  });
   if (error) {
     console.error("Error saving push subscription:", error);
     return Response.json(
@@ -44,11 +51,20 @@ export async function POST(request: Request) {
   }
 
   if (body?.welcome) {
-    await sendPush(subscription, {
-      title: "Notificações ativadas",
-      body: "Você será avisado 24h e 1h antes de compromissos e tarefas.",
-      tag: "welcome",
-    });
+    const result = await sendPush(
+      { endpoint, p256dh, auth },
+      {
+        title: "Notificações ativadas",
+        body: "Você será avisado 24h e 1h antes de compromissos e tarefas.",
+        tag: "welcome",
+      }
+    );
+    if (result === "gone") {
+      await session.client
+        .from("push_subscriptions")
+        .delete()
+        .eq("endpoint", endpoint);
+    }
   }
 
   return Response.json({ ok: true });

@@ -18,12 +18,35 @@ import { LinksView } from "@/components/links-view";
 import { TasksView } from "@/components/tasks-view";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Toast, type ToastMessage } from "@/components/toast";
-import { Plus, Settings } from "lucide-react";
+import { LogOut, Plus, Settings } from "lucide-react";
+import { AuthScreen } from "@/components/auth-screen";
+import { disablePush } from "@/components/notifications-button";
+import { useSession } from "@/hooks/use-session";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { isConfigured } from "@/lib/trello";
 import type { Entry } from "@/lib/types";
 
+// Signed-out visitors get the login; the agenda only mounts for an account, and
+// remounts when the account changes so nothing from the previous one lingers.
 export default function Home() {
+  const { session, loading } = useSession();
+
+  if (loading) return null;
+  if (!session) return <AuthScreen />;
+
+  return (
+    <AgendaApp
+      key={session.user.id}
+      onSignOut={async () => {
+        await disablePush();
+        await supabase.auth.signOut();
+      }}
+    />
+  );
+}
+
+function AgendaApp({ onSignOut }: { onSignOut: () => void }) {
   const {
     entries,
     loading,
@@ -123,6 +146,7 @@ export default function Home() {
         createEntry={createEntry}
         onOpenLinks={() => navigate("links")}
         onOpenTasks={() => navigate("tasks")}
+        onSignOut={onSignOut}
         nav={bottomNav}
       />
     );
@@ -137,6 +161,7 @@ export default function Home() {
         onFilterChange={setFilter}
         onViewChange={changeView}
         onSettingsClick={() => setTrelloConfigOpen(true)}
+        onSignOut={onSignOut}
         trelloConnected={trelloConnected}
       />
 
@@ -159,6 +184,13 @@ export default function Home() {
                 className="md:hidden -mr-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 <Settings className="h-5 w-5" />
+              </button>
+              <button
+                onClick={onSignOut}
+                aria-label="Sair"
+                className="md:hidden -mr-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <LogOut className="h-5 w-5" />
               </button>
             </header>
 

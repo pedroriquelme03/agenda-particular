@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   Link2,
   ListTodo,
+  LogOut,
   Mic,
   NotebookPen,
   Square,
@@ -32,6 +33,7 @@ interface PwaHomeProps {
   createEntry: CreateEntry;
   onOpenLinks: () => void;
   onOpenTasks: () => void;
+  onSignOut: () => void;
   nav: React.ReactNode;
 }
 
@@ -43,6 +45,7 @@ export function PwaHome({
   createEntry,
   onOpenLinks,
   onOpenTasks,
+  onSignOut,
   nav,
 }: PwaHomeProps) {
   const [screen, setScreen] = useState<Screen>("home");
@@ -97,7 +100,16 @@ export function PwaHome({
             {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
           </p>
         </div>
-        <NotificationsButton />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <NotificationsButton />
+          <button
+            onClick={onSignOut}
+            className="flex items-center gap-1.5 py-1 text-xs text-muted-foreground"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sair
+          </button>
+        </div>
       </header>
 
       <section className="flex min-h-0 flex-1 flex-col px-5">
