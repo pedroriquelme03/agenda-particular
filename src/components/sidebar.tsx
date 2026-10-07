@@ -6,7 +6,7 @@ import {
   ImageIcon,
   Link2,
   LayoutDashboard,
-  Home,
+  CalendarDays,
   Settings,
   KanbanSquare,
 } from "lucide-react";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { InstallButton } from "@/components/pwa";
 
-export type View = "entries" | "trello";
+export type View = "entries" | "calendar" | "trello";
 
 interface SidebarProps {
   view: View;
@@ -26,7 +26,6 @@ interface SidebarProps {
   trelloConnected: boolean;
   open: boolean;
   onClose: () => void;
-  onHome?: () => void;
 }
 
 const filters = [
@@ -46,7 +45,6 @@ export function Sidebar({
   trelloConnected,
   open,
   onClose,
-  onHome,
 }: SidebarProps) {
   return (
     <>
@@ -67,18 +65,6 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 p-2 space-y-1">
-        {onHome && (
-          <button
-            onClick={() => {
-              onClose();
-              onHome();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <Home className="h-4 w-4" />
-            Início
-          </button>
-        )}
         {filters.map(({ value, label, icon: Icon }) => (
           <button
             key={value}
@@ -99,9 +85,25 @@ export function Sidebar({
           </button>
         ))}
 
+        <Separator className="my-2" />
+        <button
+          onClick={() => {
+            onViewChange("calendar");
+            onClose();
+          }}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+            view === "calendar"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <CalendarDays className="h-4 w-4" />
+          Calendário
+        </button>
+
         {trelloConnected && (
           <>
-            <Separator className="my-2" />
             <button
               onClick={() => {
                 onViewChange("trello");

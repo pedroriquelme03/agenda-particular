@@ -71,6 +71,33 @@ export function useStandalone() {
   return useSyncExternalStore(subscribeStandalone, isStandalone, () => false);
 }
 
+function subscribeVisualViewport(callback: () => void) {
+  const viewport = window.visualViewport;
+  if (!viewport) return () => {};
+  viewport.addEventListener("resize", callback);
+  viewport.addEventListener("scroll", callback);
+  return () => {
+    viewport.removeEventListener("resize", callback);
+    viewport.removeEventListener("scroll", callback);
+  };
+}
+
+// The on-screen keyboard covers the page instead of resizing it. This returns the
+// part that is still visible, so a screen can keep its footer above the keyboard.
+export function useVisibleArea() {
+  const height = useSyncExternalStore(
+    subscribeVisualViewport,
+    () => window.visualViewport?.height ?? null,
+    () => null
+  );
+  const top = useSyncExternalStore(
+    subscribeVisualViewport,
+    () => window.visualViewport?.offsetTop ?? 0,
+    () => 0
+  );
+  return { height, top };
+}
+
 function isIOSInBrowser() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !isStandalone();
 }

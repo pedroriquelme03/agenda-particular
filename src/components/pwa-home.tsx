@@ -7,7 +7,7 @@ import { CalendarPlus, ChevronLeft, Mic, NotebookPen, Square } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { OfflineBanner } from "@/components/pwa";
+import { OfflineBanner, useVisibleArea } from "@/components/pwa";
 import { useDictation } from "@/hooks/use-dictation";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -20,10 +20,10 @@ type Screen = "home" | "note" | "appointment";
 
 interface PwaHomeProps {
   createEntry: CreateEntry;
-  onShowAll: () => void;
+  nav: React.ReactNode;
 }
 
-export function PwaHome({ createEntry, onShowAll }: PwaHomeProps) {
+export function PwaHome({ createEntry, nav }: PwaHomeProps) {
   const [screen, setScreen] = useState<Screen>("home");
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -62,7 +62,13 @@ export function PwaHome({ createEntry, onShowAll }: PwaHomeProps) {
         </p>
       </header>
 
-      <main className="flex-1 px-5">
+      <main className="flex flex-1 flex-col justify-end px-5 pb-5">
+        {savedMessage && (
+          <p className="mb-4 text-center text-sm text-muted-foreground">
+            {savedMessage}
+          </p>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={() => setScreen("note")}
@@ -79,19 +85,9 @@ export function PwaHome({ createEntry, onShowAll }: PwaHomeProps) {
             <span className="text-lg font-semibold">Compromisso</span>
           </button>
         </div>
-
-        {savedMessage && (
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            {savedMessage}
-          </p>
-        )}
       </main>
 
-      <footer className="px-5 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center">
-        <Button variant="ghost" onClick={onShowAll}>
-          Ver agenda completa
-        </Button>
-      </footer>
+      {nav}
     </div>
   );
 }
@@ -116,6 +112,7 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   }, []);
 
   const dictation = useDictation(appendPhrase);
+  const visibleArea = useVisibleArea();
 
   const handleSave = async () => {
     if (!content.trim()) return;
@@ -140,7 +137,14 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
+    <div
+      className="fixed inset-x-0 top-0 flex h-full flex-col bg-background"
+      style={
+        visibleArea.height
+          ? { height: visibleArea.height, top: visibleArea.top }
+          : undefined
+      }
+    >
       <header className="flex items-center justify-between px-2 pt-3 pb-1">
         <button
           onClick={onCancel}
@@ -170,8 +174,10 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
         className="flex-1 w-full resize-none bg-transparent px-5 py-3 text-lg leading-relaxed outline-none placeholder:text-muted-foreground/60"
       />
 
-      <footer className="flex items-center gap-3 border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <footer className="flex flex-row-reverse items-center gap-3 border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <button
+          // Keeps focus in the note so the keyboard does not close on tap.
+          onMouseDown={(e) => e.preventDefault()}
           onClick={dictation.isListening ? dictation.stop : dictation.start}
           disabled={!dictation.isSupported}
           aria-label={dictation.isListening ? "Parar gravação" : "Gravar áudio"}

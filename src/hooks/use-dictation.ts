@@ -10,6 +10,11 @@ import {
 
 const noopSubscribe = () => () => {};
 
+// A session that ends sooner than this without hearing anything means the
+// device is refusing to listen; restarting it would spin forever.
+const MIN_SESSION_MS = 1000;
+const RESTART_DELAY_MS = 250;
+
 function hasSpeechRecognition() {
   return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
 }
@@ -22,6 +27,7 @@ export function useDictation(onFinal: (text: string) => void) {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const wantedRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onFinalRef = useRef(onFinal);
 
   useEffect(() => {
@@ -36,6 +42,11 @@ export function useDictation(onFinal: (text: string) => void) {
 
   const stop = useCallback(() => {
     wantedRef.current = false;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+      setIsListening(false);
+    }
     recognitionRef.current?.stop();
   }, []);
 
@@ -51,7 +62,17 @@ export function useDictation(onFinal: (text: string) => void) {
     recognition.interimResults = true;
     recognition.lang = "pt-BR";
 
+    let startedAt = 0;
+    let heardSomething = false;
+
+    const begin = () => {
+      startedAt = Date.now();
+      heardSomething = false;
+      recognition.start();
+    };
+
     recognition.onresult = (event) => {
+      heardSomething = true;
       let interimText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -66,9 +87,10 @@ export function useDictation(onFinal: (text: string) => void) {
     };
 
     recognition.onerror = (event) => {
-      if (event.error === "no-speech" || event.error === "aborted") return;
-      console.error("Speech recognition error:", event.error);
+      if (event.error === "no-speech") return;
       wantedRef.current = false;
+      if (event.error === "aborted") return;
+      console.error("Speech recognition error:", event.error);
       setError(
         event.error === "not-allowed" || event.error === "service-not-allowed"
           ? "Permita o uso do microfone para ditar."
@@ -79,11 +101,24 @@ export function useDictation(onFinal: (text: string) => void) {
     recognition.onend = () => {
       setInterim("");
       if (wantedRef.current) {
-        try {
-          recognition.start();
-          return;
-        } catch {
+        if (!heardSomething && Date.now() - startedAt < MIN_SESSION_MS) {
           wantedRef.current = false;
+          setError("Ditado por voz não disponível neste aparelho.");
+        } else {
+          restartTimerRef.current = setTimeout(() => {
+            restartTimerRef.current = null;
+            if (!wantedRef.current) {
+              setIsListening(false);
+              return;
+            }
+            try {
+              begin();
+            } catch {
+              wantedRef.current = false;
+              setIsListening(false);
+            }
+          }, RESTART_DELAY_MS);
+          return;
         }
       }
       setIsListening(false);
@@ -93,7 +128,7 @@ export function useDictation(onFinal: (text: string) => void) {
     wantedRef.current = true;
     setError(null);
     try {
-      recognition.start();
+      begin();
       setIsListening(true);
     } catch {
       wantedRef.current = false;
@@ -104,6 +139,7 @@ export function useDictation(onFinal: (text: string) => void) {
   useEffect(() => {
     return () => {
       wantedRef.current = false;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       recognitionRef.current?.abort();
     };
   }, []);
