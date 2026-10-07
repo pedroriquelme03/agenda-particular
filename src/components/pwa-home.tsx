@@ -95,6 +95,7 @@ export function PwaHome({
         (entry) =>
           entry.is_reminder &&
           !!entry.reminder_date &&
+          !entry.archived_at &&
           isSameDay(new Date(entry.reminder_date), today)
       )
       .map((entry) => {
@@ -117,6 +118,7 @@ export function PwaHome({
       .filter(
         (task) =>
           !!task.due_date &&
+          !task.archived_at &&
           isSameDay(new Date(task.due_date + "T00:00"), today)
       )
       .map((task) => ({
@@ -260,8 +262,21 @@ interface ScreenProps {
   onSaved: () => void;
 }
 
-export function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
-  const [content, setContent] = useState("");
+export function NoteScreen({
+  createEntry,
+  onCancel,
+  onSaved,
+  editing,
+}: ScreenProps & {
+  // Given to change an existing text instead of creating a note.
+  editing?: {
+    content: string;
+    // A link's note can be cleared; a note of its own cannot be left empty.
+    allowEmpty?: boolean;
+    save: (content: string) => Promise<boolean>;
+  };
+}) {
+  const [content, setContent] = useState(editing?.content ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [openedAt] = useState(() => new Date());
@@ -276,10 +291,19 @@ export function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   const dictation = useDictation(appendPhrase);
   const visibleArea = useVisibleArea();
 
+  const isEmpty = !content.trim() && !editing?.allowEmpty;
+
   const handleSave = async () => {
-    if (!content.trim()) return;
+    if (isEmpty) return;
     setSaving(true);
     setSaveError(false);
+    if (editing) {
+      const saved = await editing.save(content.trim());
+      setSaving(false);
+      if (saved) onSaved();
+      else setSaveError(true);
+      return;
+    }
     const entry = await createEntry({
       type: "text",
       title: null,
@@ -318,7 +342,7 @@ export function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
           onClick={handleSave}
           disabled={
             saving ||
-            !content.trim() ||
+            isEmpty ||
             dictation.isListening ||
             dictation.isTranscribing
           }

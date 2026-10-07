@@ -13,6 +13,7 @@ export type TaskInput = Pick<
   | "due_time"
   | "value"
   | "category_id"
+  | "checklist"
 >;
 
 export function useTasks() {

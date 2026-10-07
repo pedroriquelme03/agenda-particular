@@ -4,6 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { addMonths, format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
+  Archive,
+  ArrowDownUp,
   Calendar,
   Check,
   ChevronLeft,
@@ -29,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +59,8 @@ export interface Event {
   // Whether it can be checked off as done, and whether it already was.
   checkable?: boolean;
   done?: boolean;
+  // Archived items only show when the "archived" filter is on.
+  archived?: boolean;
 }
 
 export interface EventDraft {
@@ -75,6 +80,7 @@ export interface EventManagerProps {
   onEventUpdate?: (id: string, event: Partial<Event>) => void;
   onEventDelete?: (id: string) => void;
   onEventToggleDone?: (id: string, done: boolean) => void;
+  onEventArchive?: (id: string, archive: boolean) => void;
   categories?: string[];
   colors?: ColorClasses[];
   defaultView?: CalendarView;
@@ -156,6 +162,7 @@ export function EventManager({
   onEventUpdate,
   onEventDelete,
   onEventToggleDone,
+  onEventArchive,
   categories = [],
   colors = defaultColors,
   defaultView = "month",
@@ -173,6 +180,10 @@ export function EventManager({
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   // Off: everything, with done items marked as such. On: only the done ones.
   const [showDone, setShowDone] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  // Order of the full list. "added": last registered first. "date": by the
+  // item's own date, earliest first.
+  const [listSort, setListSort] = useState<"added" | "date">("added");
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
   const dayPanelRef = useRef<HTMLDivElement>(null);
@@ -205,6 +216,7 @@ export function EventManager({
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
+      if (!!event.archived !== showArchived) return false;
       if (showDone && !event.done) return false;
 
       if (searchQuery) {
@@ -227,7 +239,7 @@ export function EventManager({
 
       return true;
     });
-  }, [events, searchQuery, selectedCategories, showDone]);
+  }, [events, searchQuery, selectedCategories, showDone, showArchived]);
 
   const endBeforeStart = newEvent
     ? !!newEvent.endTime && newEvent.endTime <= newEvent.startTime
@@ -249,6 +261,24 @@ export function EventManager({
     onEventUpdate?.(selectedEvent.id, selectedEvent);
     closeDialog();
   };
+
+  const archiveEvent = onEventArchive
+    ? (event: Event) => {
+        const archive = !event.archived;
+        onEventArchive(event.id, archive);
+        setToast({
+          id: Date.now(),
+          text: archive ? "Arquivado" : "Desarquivado",
+          ...(archive && {
+            actionLabel: "Desfazer",
+            onAction: () => {
+              onEventArchive(event.id, false);
+              setToast(null);
+            },
+          }),
+        });
+      }
+    : undefined;
 
   // Deleting asks first: the details close and the confirmation takes their place.
   const requestDelete = (event: Event) => {
@@ -437,16 +467,47 @@ export function EventManager({
           )}
         </div>
 
-        {onEventToggleDone && (
-          <div className="flex">
-            <Badge
-              variant={showDone ? "default" : "outline"}
-              className="cursor-pointer"
-              onClick={() => setShowDone((prev) => !prev)}
-            >
-              <Check className="h-3 w-3" />
-              Concluídos
-            </Badge>
+        {(onEventToggleDone || onEventArchive || view === "list") && (
+          <div className="flex flex-wrap items-center gap-2">
+            {onEventToggleDone && (
+              <Badge
+                variant={showDone ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setShowDone((prev) => !prev)}
+              >
+                <Check className="h-3 w-3" />
+                Concluídos
+              </Badge>
+            )}
+            {onEventArchive && (
+              <Badge
+                variant={showArchived ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setShowArchived((prev) => !prev)}
+              >
+                <Archive className="h-3 w-3" />
+                Arquivados
+              </Badge>
+            )}
+            {view === "list" && (
+              <span className="ml-auto flex items-center gap-2">
+                <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
+                <Badge
+                  variant={listSort === "added" ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setListSort("added")}
+                >
+                  Adição
+                </Badge>
+                <Badge
+                  variant={listSort === "date" ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setListSort("date")}
+                >
+                  Data
+                </Badge>
+              </span>
+            )}
           </div>
         )}
 
@@ -513,6 +574,7 @@ export function EventManager({
                 )}
                 onEventClick={setSelectedEvent}
                 onToggleDone={toggleDone}
+                onArchive={archiveEvent}
                 getColorClasses={getColorClasses}
                 singleDay
                 emptyText="Nada registrado neste dia"
@@ -529,8 +591,10 @@ export function EventManager({
           events={filteredEvents}
           onEventClick={setSelectedEvent}
           onToggleDone={toggleDone}
+                onArchive={archiveEvent}
           getColorClasses={getColorClasses}
-          byCreation
+          byCreation={listSort === "added"}
+          ascending
         />
       )}
 
@@ -1064,12 +1128,15 @@ function ListView({
   onEventClick,
   getColorClasses,
   onToggleDone,
+  onArchive,
   singleDay = false,
   emptyText = "Nada encontrado",
   ascending = false,
   byCreation = false,
 }: Pick<ViewProps, "events" | "onEventClick" | "getColorClasses"> & {
   onToggleDone?: (id: string, done: boolean) => void;
+  // Dragging a card sideways archives it (or restores an archived one).
+  onArchive?: (event: Event) => void;
   // The list is for one day whose title is shown elsewhere: no date headers.
   singleDay?: boolean;
   emptyText?: string;
@@ -1109,8 +1176,13 @@ function ListView({
             )}
             <div className="space-y-2">
               {group.events.map((event) => (
-                <div
+                <SwipeToArchive
                   key={event.id}
+                  disabled={!onArchive}
+                  archived={event.archived}
+                  onArchive={() => onArchive?.(event)}
+                >
+                <div
                   onClick={() => onEventClick(event)}
                   className={cn(
                     "cursor-pointer rounded-lg border bg-card p-3 transition-shadow hover:shadow-md sm:p-4",
@@ -1186,6 +1258,7 @@ function ListView({
                     </div>
                   </div>
                 </div>
+                </SwipeToArchive>
               ))}
             </div>
           </div>

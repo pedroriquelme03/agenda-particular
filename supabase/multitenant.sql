@@ -151,7 +151,8 @@ begin
         'id', e.id, 'user_id', e.user_id, 'title', e.title,
         'content', e.content, 'reminder_date', e.reminder_date))
       from public.entries e
-      where e.is_reminder and e.completed_at is null and e.user_id is not null
+      where e.is_reminder and e.completed_at is null and e.archived_at is null
+        and e.user_id is not null
         and e.reminder_date > p_from and e.reminder_date <= p_to
     ), '[]'::jsonb),
     'tasks', coalesce((
@@ -159,7 +160,8 @@ begin
         'id', t.id, 'user_id', t.user_id, 'title', t.title,
         'due_date', t.due_date, 'due_time', t.due_time))
       from public.tasks t
-      where t.completed_at is null and t.user_id is not null
+      where t.completed_at is null and t.archived_at is null
+        and t.user_id is not null
         and t.due_date between p_date_from and p_date_to
     ), '[]'::jsonb),
     'subscriptions', coalesce((
@@ -247,3 +249,87 @@ alter table public.entries
   add column if not exists category_id uuid references public.categories (id) on delete set null;
 alter table public.tasks
   add column if not exists category_id uuid references public.categories (id) on delete set null;
+
+-- 6. Notes and links ----------------------------------------------------------
+
+-- Saved links a note points to (ids of other entries of type 'link').
+alter table public.entries add column if not exists linked_ids uuid[] not null default '{}';
+
+-- 7. Archive ------------------------------------------------------------------
+
+-- Archived items leave the lists and the calendar but are kept. They also stop
+-- sending reminders (see push_cron_data above). These columns must exist before
+-- that function is created.
+alter table public.entries add column if not exists archived_at timestamptz;
+alter table public.tasks add column if not exists archived_at timestamptz;
+
+-- 8. Ideas, finance and task checklists ---------------------------------------
+
+-- Ideas and the log of how each one is progressing.
+create table if not exists public.ideas (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  title text not null,
+  description text not null default '',
+  progress integer not null default 0 check (progress between 0 and 100),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.idea_updates (
+  id uuid primary key default gen_random_uuid(),
+  idea_id uuid not null references public.ideas (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  text text not null,
+  created_at timestamptz not null default now()
+);
+
+-- The month's money: fixed accounts to receive and to pay, and sales.
+-- Months are stored as their first day.
+create table if not exists public.finance_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  kind text not null check (kind in ('fixed_income', 'fixed_expense', 'sale')),
+  name text not null,
+  amount numeric(12, 2) not null,
+  -- Fixed account: first month it applies to. Sale: the month it belongs to.
+  month date not null,
+  -- Fixed account only: first month it no longer applies to; null = still active.
+  end_month date,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_ideas_user on public.ideas (user_id);
+create index if not exists idx_idea_updates_idea on public.idea_updates (idea_id);
+create index if not exists idx_idea_updates_user on public.idea_updates (user_id);
+create index if not exists idx_finance_items_user on public.finance_items (user_id);
+
+alter table public.ideas enable row level security;
+drop policy if exists "ideas_owner" on public.ideas;
+create policy "ideas_owner" on public.ideas
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.ideas from anon;
+grant select, insert, update, delete on public.ideas to authenticated;
+
+alter table public.idea_updates enable row level security;
+drop policy if exists "idea_updates_owner" on public.idea_updates;
+create policy "idea_updates_owner" on public.idea_updates
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.idea_updates from anon;
+grant select, insert, update, delete on public.idea_updates to authenticated;
+
+alter table public.finance_items enable row level security;
+drop policy if exists "finance_items_owner" on public.finance_items;
+create policy "finance_items_owner" on public.finance_items
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.finance_items from anon;
+grant select, insert, update, delete on public.finance_items to authenticated;
+
+-- Steps of a task: [{ "id": "...", "text": "...", "done": false }]
+alter table public.tasks add column if not exists checklist jsonb not null default '[]'::jsonb;

@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { format, isBefore, parseISO, startOfDay } from "date-fns";
-import { CalendarClock, Check, FolderKanban, Plus, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArrowDownUp,
+  CalendarClock,
+  Check,
+  FolderKanban,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +24,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { Checklist } from "@/components/checklist";
+import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { CategoryPicker, categoryColorClass } from "@/components/category-picker";
 import type { CategoriesState } from "@/hooks/use-categories";
 import { Toast, type ToastMessage } from "@/components/toast";
 import type { TaskInput, useTasks } from "@/hooks/use-tasks";
-import type { Category, Task } from "@/lib/types";
+import type { Category, ChecklistItem, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -50,6 +60,9 @@ export function TasksView({
 }: ReturnType<typeof useTasks> & { categories: CategoriesState }) {
   const [formOpen, setFormOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  // "added": last registered first. "date": nearest deadline first.
+  const [sortBy, setSortBy] = useState<"added" | "date">("added");
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
@@ -62,7 +75,39 @@ export function TasksView({
   };
 
   // Done tasks stay in place, marked as done; the filter narrows to only them.
-  const visible = showDone ? tasks.filter((task) => task.completed_at) : tasks;
+  const filtered = tasks.filter(
+    (task) =>
+      !!task.archived_at === showArchived && (!showDone || !!task.completed_at)
+  );
+
+  // Tasks arrive ordered by when they were added. A task without a deadline
+  // goes last when ordering by date; one without a time counts as end of day.
+  const deadline = (task: Task) =>
+    task.due_date
+      ? new Date(`${task.due_date}T${task.due_time || "23:59"}`).getTime()
+      : Infinity;
+  const visible =
+    sortBy === "date"
+      ? [...filtered].sort((a, b) => deadline(a) - deadline(b))
+      : filtered;
+
+  const toggleArchived = (task: Task) => {
+    const archive = !task.archived_at;
+    updateTask(task.id, {
+      archived_at: archive ? new Date().toISOString() : null,
+    });
+    setToast({
+      id: Date.now(),
+      text: archive ? "Tarefa arquivada" : "Tarefa desarquivada",
+      ...(archive && {
+        actionLabel: "Desfazer",
+        onAction: () => {
+          updateTask(task.id, { archived_at: null });
+          setToast(null);
+        },
+      }),
+    });
+  };
 
   const toggleDone = (task: Task) => {
     const done = !task.completed_at;
@@ -86,7 +131,7 @@ export function TasksView({
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
-      <div className="flex">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge
           variant={showDone ? "default" : "outline"}
           className="cursor-pointer"
@@ -95,26 +140,63 @@ export function TasksView({
           <Check className="h-3 w-3" />
           Concluídas
         </Badge>
+        <Badge
+          variant={showArchived ? "default" : "outline"}
+          className="cursor-pointer"
+          onClick={() => setShowArchived((prev) => !prev)}
+        >
+          <Archive className="h-3 w-3" />
+          Arquivadas
+        </Badge>
+        <span className="ml-auto flex items-center gap-2">
+          <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
+          <Badge
+            variant={sortBy === "added" ? "default" : "outline"}
+            className="cursor-pointer"
+            onClick={() => setSortBy("added")}
+          >
+            Adição
+          </Badge>
+          <Badge
+            variant={sortBy === "date" ? "default" : "outline"}
+            className="cursor-pointer"
+            onClick={() => setSortBy("date")}
+          >
+            Data
+          </Badge>
+        </span>
       </div>
 
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
       ) : visible.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          {showDone ? "Nenhuma tarefa concluída." : "Nenhuma tarefa ainda."}
+          {showArchived
+            ? "Nenhuma tarefa arquivada."
+            : showDone
+              ? "Nenhuma tarefa concluída."
+              : "Nenhuma tarefa ainda."}
         </div>
       ) : (
         <div className="space-y-2">
           {visible.map((task) => (
-            <TaskCard
+            <SwipeToArchive
               key={task.id}
+              archived={!!task.archived_at}
+              onArchive={() => toggleArchived(task)}
+            >
+            <TaskCard
               task={task}
               category={categories.categories.find(
                 (category) => category.id === task.category_id
               )}
               onToggleDone={() => toggleDone(task)}
+              onChecklistChange={(checklist) =>
+                updateTask(task.id, { checklist })
+              }
               onDelete={() => setDeleteTarget(task)}
             />
+            </SwipeToArchive>
           ))}
         </div>
       )}
@@ -168,14 +250,17 @@ function TaskCard({
   task,
   category,
   onToggleDone,
+  onChecklistChange,
   onDelete,
 }: {
   task: Task;
   category?: Category;
+  onChecklistChange: (checklist: ChecklistItem[]) => void;
   onToggleDone: () => void;
   onDelete: () => void;
 }) {
   const done = !!task.completed_at;
+  const checklist = task.checklist ?? [];
   // due_date is a plain "yyyy-MM-dd"; parseISO keeps it in local time.
   const dueDate = task.due_date ? parseISO(task.due_date) : null;
   // With a time, it is late once that moment passes; without, after the day ends.
@@ -215,6 +300,15 @@ function TaskCard({
             <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
               {task.description}
             </p>
+          )}
+          {checklist.length > 0 && (
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Checklist · {checklist.filter((item) => item.done).length}/
+                {checklist.length}
+              </p>
+              <Checklist items={checklist} onChange={onChecklistChange} compact />
+            </div>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {category && (
@@ -283,6 +377,7 @@ function TaskForm({
   const [project, setProject] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [dueTime, setDueTime] = useState("");
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -303,6 +398,7 @@ function TaskForm({
       due_date: dueDate || null,
       due_time: dueDate && dueTime ? dueTime : null,
       category_id: categoryId,
+      checklist,
       value: parseValue(value),
     });
     setSaving(false);
@@ -367,6 +463,11 @@ function TaskForm({
           disabled={!dueDate}
           className="block h-12 appearance-none text-base"
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Checklist</Label>
+        <Checklist items={checklist} onChange={setChecklist} />
       </div>
 
       <div className="space-y-2">

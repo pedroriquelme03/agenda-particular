@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Archive, ClipboardPaste, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +25,12 @@ interface LinksViewProps {
   ) => Promise<Entry | null>;
   deleteEntry: (id: string) => void;
   onTrelloSend?: (entry: Entry) => void;
+  // Opens the link's own note for editing.
+  onEdit: (entry: Entry) => void;
+  onToggleDone: (entry: Entry) => void;
+  onConvert: (entry: Entry) => void;
+  // Archives the entry, or restores it when it is already archived.
+  onArchive: (entry: Entry) => void;
 }
 
 // "site.com" -> "https://site.com"
@@ -37,14 +45,35 @@ export function LinksView({
   createEntry,
   deleteEntry,
   onTrelloSend,
+  onEdit,
+  onToggleDone,
+  onConvert,
+  onArchive,
 }: LinksViewProps) {
+  const [showArchived, setShowArchived] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
 
-  const links = entries.filter((entry) => entry.type === "link");
+  // Fills the field from the clipboard in one tap. The browser may ask the
+  // user to allow it, and refuses outside a tap.
+  const pasteLink = async () => {
+    setPasteError(null);
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) setUrl(text);
+      else setPasteError("Não há nada copiado para colar.");
+    } catch {
+      setPasteError("Não foi possível colar. Cole manualmente no campo.");
+    }
+  };
+
+  const links = entries.filter(
+    (entry) => entry.type === "link" && !!entry.archived_at === showArchived
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,24 +105,47 @@ export function LinksView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto max-w-2xl p-4 md:p-6">
+        <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
+          <div className="flex">
+            <Badge
+              variant={showArchived ? "default" : "outline"}
+              className="cursor-pointer"
+              onClick={() => setShowArchived((prev) => !prev)}
+            >
+              <Archive className="h-3 w-3" />
+              Arquivados
+            </Badge>
+          </div>
           {loading && links.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               Carregando...
             </div>
           ) : links.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
-              Nenhum link ainda. Adicione o primeiro!
+              {showArchived
+                ? "Nenhum link arquivado."
+                : "Nenhum link ainda. Adicione o primeiro!"}
             </div>
           ) : (
             <div className="space-y-3">
               {links.map((entry) => (
-                <EntryCard
+                <SwipeToArchive
                   key={entry.id}
-                  entry={entry}
-                  onDelete={deleteEntry}
-                  onTrelloSend={onTrelloSend}
-                />
+                  archived={!!entry.archived_at}
+                  onArchive={() => onArchive(entry)}
+                >
+                  <EntryCard
+                    entry={entry}
+                    onDelete={deleteEntry}
+                    onTrelloSend={onTrelloSend}
+                    onToggleDone={onToggleDone}
+                    onEdit={onEdit}
+                    onConvert={onConvert}
+                    attached={entries.filter((other) =>
+                      other.linked_ids?.includes(entry.id)
+                    )}
+                  />
+                </SwipeToArchive>
               ))}
             </div>
           )}
@@ -118,16 +170,30 @@ export function LinksView({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="link-url">Link</Label>
-              <Input
-                id="link-url"
-                inputMode="url"
-                autoCapitalize="none"
-                autoCorrect="off"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://..."
-                className="h-12 text-base"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="link-url"
+                  inputMode="url"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="h-12 text-base"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={pasteLink}
+                  className="h-12 shrink-0 px-4 text-base"
+                >
+                  <ClipboardPaste className="h-4 w-4" />
+                  Colar
+                </Button>
+              </div>
+              {pasteError && (
+                <p className="text-sm text-muted-foreground">{pasteError}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="link-title">Título (opcional)</Label>

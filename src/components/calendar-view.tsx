@@ -63,6 +63,7 @@ function toEvent(entry: Entry, lookup: CategoryLookup): Event {
     movable: isAppointment,
     checkable: isAppointment,
     done: !!entry.completed_at,
+    archived: !!entry.archived_at,
   };
 }
 
@@ -88,6 +89,7 @@ function taskToEvent(task: Task, lookup: CategoryLookup): Event {
     fixedDuration: true,
     checkable: true,
     done: !!task.completed_at,
+    archived: !!task.archived_at,
   };
 }
 
@@ -119,7 +121,10 @@ export function CalendarView({
       categories.categories.map((category) => [category.id, category])
     );
     return [
-      ...entries.map((entry) => toEvent(entry, lookup)),
+      // Only what has a date of its own: notes and links stay out of the calendar.
+      ...entries
+        .filter((entry) => entry.is_reminder && !!entry.reminder_date)
+        .map((entry) => toEvent(entry, lookup)),
       ...tasks
         .filter((task) => task.due_date)
         .map((task) => taskToEvent(task, lookup)),
@@ -232,6 +237,14 @@ export function CalendarView({
           ? deleteTask(id.slice(TASK_PREFIX.length))
           : deleteEntry(id)
       }
+      onEventArchive={(id, archive) => {
+        const archived_at = archive ? new Date().toISOString() : null;
+        if (id.startsWith(TASK_PREFIX)) {
+          updateTask(id.slice(TASK_PREFIX.length), { archived_at });
+        } else {
+          updateEntry(id, { archived_at });
+        }
+      }}
       onEventToggleDone={(id, done) => {
         const completed_at = done ? new Date().toISOString() : null;
         if (id.startsWith(TASK_PREFIX)) {

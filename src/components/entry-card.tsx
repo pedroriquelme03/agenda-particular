@@ -8,6 +8,10 @@ import {
   ImageIcon,
   Link2,
   Trash2,
+  Check,
+  Pencil,
+  Paperclip,
+  Repeat2,
   Bell,
   ExternalLink,
   Send,
@@ -41,9 +45,28 @@ interface EntryCardProps {
   entry: Entry;
   onDelete: (id: string) => void;
   onTrelloSend?: (entry: Entry) => void;
+  // Marks or unmarks the item as done.
+  onToggleDone?: (entry: Entry) => void;
+  // Opens the text for editing.
+  onEdit?: (entry: Entry) => void;
+  // Opens the choice of turning the item into a task or an appointment.
+  onConvert?: (entry: Entry) => void;
+  // Opens the choice of saved links to attach (notes only).
+  onAttachLinks?: (entry: Entry) => void;
+  // What is attached: the links of a note, or the notes that use a link.
+  attached?: Entry[];
 }
 
-export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
+export function EntryCard({
+  entry,
+  onDelete,
+  onTrelloSend,
+  onToggleDone,
+  onEdit,
+  onConvert,
+  onAttachLinks,
+  attached = [],
+}: EntryCardProps) {
   const Icon = typeIcons[entry.type];
   const isDone = !!entry.completed_at;
   const isUpcoming =
@@ -61,12 +84,27 @@ export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
     <Card
       className={cn(
         "transition-colors",
+        isDone && "opacity-60",
         isOverdue && "border-destructive/50 bg-destructive/5",
         isUpcoming && "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/10"
       )}
     >
       <CardHeader className="pb-2 flex flex-row items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
+          {onToggleDone && (
+            <button
+              onClick={() => onToggleDone(entry)}
+              aria-label={isDone ? "Desmarcar como feito" : "Marcar como feito"}
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                isDone
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-muted-foreground/50"
+              )}
+            >
+              {isDone && <Check className="h-3.5 w-3.5" />}
+            </button>
+          )}
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Badge variant="outline" className="text-xs">
             {typeLabels[entry.type]}
@@ -87,6 +125,42 @@ export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
               <Send className="h-3.5 w-3.5" />
             </Button>
           )}
+          {onConvert && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onConvert(entry)}
+              title="Transformar em tarefa ou compromisso"
+              aria-label="Transformar em tarefa ou compromisso"
+            >
+              <Repeat2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {onAttachLinks && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onAttachLinks(entry)}
+              title="Vincular links"
+              aria-label="Vincular links"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {onEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onEdit(entry)}
+              title={entry.type === "link" ? "Anotação do link" : "Editar"}
+              aria-label={entry.type === "link" ? "Anotação do link" : "Editar"}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -100,7 +174,9 @@ export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
 
       <CardContent className="space-y-2">
         {entry.content && (
-          <p className="text-sm whitespace-pre-wrap">{entry.content}</p>
+          <p className={cn("text-sm whitespace-pre-wrap", isDone && "line-through")}>
+            {entry.content}
+          </p>
         )}
 
         {entry.image_url && (
@@ -121,6 +197,35 @@ export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
             <ExternalLink className="h-3.5 w-3.5" />
             {entry.link_url}
           </a>
+        )}
+
+        {attached.length > 0 && (
+          <ul className="space-y-1 border-t pt-2">
+            {attached.map((other) => (
+              <li key={other.id} className="flex items-center gap-1.5 text-sm">
+                {other.link_url ? (
+                  <>
+                    <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <a
+                      href={other.link_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-w-0 truncate text-primary hover:underline"
+                    >
+                      {other.title || other.link_url}
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      {other.title || other.content.split("\n")[0]}
+                    </span>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
 
         {entry.is_reminder && entry.reminder_date && (

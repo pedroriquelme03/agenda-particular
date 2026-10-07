@@ -16,10 +16,54 @@ export interface Entry {
   // Set when an appointment is checked off as done.
   completed_at?: string | null;
   tags: string[];
+  // Saved links (other entries of type "link") attached to this note.
+  linked_ids?: string[];
+  // Set when the item is archived: kept, but out of the lists and the calendar.
+  archived_at?: string | null;
   // The account's own category, if one was chosen (appointments).
   category_id?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface IdeaUpdate {
+  id: string;
+  idea_id: string;
+  text: string;
+  created_at: string;
+}
+
+export interface Idea {
+  id: string;
+  title: string;
+  description: string;
+  // 0 to 100.
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  // Log of progress, newest first.
+  idea_updates: IdeaUpdate[];
+}
+
+export type FinanceKind = "fixed_income" | "fixed_expense" | "sale";
+
+export interface FinanceItem {
+  id: string;
+  kind: FinanceKind;
+  name: string;
+  amount: number;
+  // First day of a month, "yyyy-MM-01". Fixed account: first month it applies
+  // to. Sale: the month it belongs to.
+  month: string;
+  // Fixed account only: first month it no longer applies to.
+  end_month: string | null;
+  created_at: string;
 }
 
 export interface Category {
@@ -41,6 +85,9 @@ export interface Task {
   due_time?: string | null;
   value: number | null;
   category_id?: string | null;
+  // Steps of the task, ticked off one by one.
+  checklist?: ChecklistItem[];
+  archived_at?: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

@@ -7,6 +7,9 @@ import {
   Link2,
   LayoutDashboard,
   CalendarDays,
+  Lightbulb,
+  ListTodo,
+  Wallet,
   Settings,
   LogOut,
   KanbanSquare,
@@ -16,7 +19,14 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { InstallButton } from "@/components/pwa";
 
-export type View = "entries" | "calendar" | "links" | "tasks" | "trello";
+export type View =
+  | "entries"
+  | "calendar"
+  | "links"
+  | "tasks"
+  | "ideas"
+  | "finance"
+  | "trello";
 
 interface SidebarProps {
   view: View;
@@ -34,6 +44,16 @@ export const filters = [
   { value: "voice" as const, label: "Voz", icon: Mic },
   { value: "image" as const, label: "Imagens", icon: ImageIcon },
   { value: "link" as const, label: "Links", icon: Link2 },
+];
+
+// The pages besides the notes list (which the filters above open).
+const pages = [
+  { value: "calendar" as const, label: "Calendário", icon: CalendarDays },
+  { value: "tasks" as const, label: "Tarefas", icon: ListTodo },
+  { value: "links" as const, label: "Links", icon: Link2 },
+  { value: "ideas" as const, label: "Ideias", icon: Lightbulb },
+  { value: "finance" as const, label: "Financeiro", icon: Wallet },
+  { value: "trello" as const, label: "Quadros Trello", icon: KanbanSquare },
 ];
 
 export function Sidebar({
@@ -73,39 +93,23 @@ export function Sidebar({
         ))}
 
         <Separator className="my-2" />
-        <button
-          onClick={() => {
-            onViewChange("calendar");
-          }}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-            view === "calendar"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}
-        >
-          <CalendarDays className="h-4 w-4" />
-          Calendário
-        </button>
-
-        {trelloConnected && (
-          <>
+        {pages
+          .filter(({ value }) => value !== "trello" || trelloConnected)
+          .map(({ value, label, icon: Icon }) => (
             <button
-              onClick={() => {
-                onViewChange("trello");
-              }}
+              key={value}
+              onClick={() => onViewChange(value)}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                view === "trello"
+                view === value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <KanbanSquare className="h-4 w-4" />
-              Quadros Trello
+              <Icon className="h-4 w-4" />
+              {label}
             </button>
-          </>
-        )}
+          ))}
       </nav>
 
       <div className="p-2 border-t space-y-1">

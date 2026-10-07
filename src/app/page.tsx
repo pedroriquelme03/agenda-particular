@@ -17,9 +17,15 @@ import { BottomNav, type Page } from "@/components/bottom-nav";
 import { CalendarView } from "@/components/calendar-view";
 import { LinksView } from "@/components/links-view";
 import { TasksView } from "@/components/tasks-view";
+import { IdeasView } from "@/components/ideas-view";
+import { FinanceView } from "@/components/finance-view";
+import { ConvertDialog, type Conversion } from "@/components/convert-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { LinkPicker } from "@/components/link-picker";
 import { Toast, type ToastMessage } from "@/components/toast";
-import { LogOut, Plus, Settings } from "lucide-react";
+import { Archive, LogOut, Plus, Settings } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { AuthScreen, NewPasswordScreen } from "@/components/auth-screen";
 import { disablePush } from "@/components/notifications-button";
 import { useSession } from "@/hooks/use-session";
@@ -83,8 +89,84 @@ function AgendaApp({
   const [trelloConnected, setTrelloConnected] = useState(false);
   const standalone = useStandalone();
   const [noteOpen, setNoteOpen] = useState(false);
+  // Entry whose text is open for editing, and note choosing its links.
+  const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [linkingNote, setLinkingNote] = useState<Entry | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [convertingEntry, setConvertingEntry] = useState<Entry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  const toggleEntryDone = (entry: Entry) => {
+    const done = !entry.completed_at;
+    updateEntry(entry.id, {
+      completed_at: done ? new Date().toISOString() : null,
+    });
+    setToast({
+      id: Date.now(),
+      text: done ? "Marcado como concluído" : "Reaberto",
+    });
+  };
+
+  // Archives the entry, or restores it when it is already archived.
+  const toggleEntryArchived = (entry: Entry) => {
+    const archive = !entry.archived_at;
+    updateEntry(entry.id, {
+      archived_at: archive ? new Date().toISOString() : null,
+    });
+    setToast({
+      id: Date.now(),
+      text: archive ? "Arquivado" : "Desarquivado",
+      ...(archive && {
+        actionLabel: "Desfazer",
+        onAction: () => {
+          updateEntry(entry.id, { archived_at: null });
+          setToast(null);
+        },
+      }),
+    });
+  };
+
+  // A note or link becomes an appointment in place (it is the same kind of
+  // record), or a new task, with the original archived rather than lost.
+  const convertEntry = async ({ target, title, date, time }: Conversion) => {
+    const entry = convertingEntry;
+    if (!entry) return false;
+
+    if (target === "appointment") {
+      const updated = await updateEntry(entry.id, {
+        title,
+        is_reminder: true,
+        reminder_date: new Date(`${date}T${time}`).toISOString(),
+        tags: entry.tags.includes("compromisso")
+          ? entry.tags
+          : [...entry.tags, "compromisso"],
+      });
+      if (!updated) return false;
+    } else {
+      const task = await tasksState.createTask({
+        title,
+        description: [entry.content, entry.link_url]
+          .filter((part) => part && part !== title)
+          .join("\n"),
+        project: null,
+        due_date: date || null,
+        due_time: date && time ? time : null,
+        value: null,
+        category_id: null,
+        checklist: [],
+      });
+      if (!task) return false;
+      await updateEntry(entry.id, { archived_at: new Date().toISOString() });
+    }
+
+    setConvertingEntry(null);
+    setToast({
+      id: Date.now(),
+      text: target === "appointment" ? "Virou compromisso" : "Virou tarefa",
+    });
+    return true;
+  };
 
   const requestDelete = (id: string) =>
     setDeleteTarget(entries.find((entry) => entry.id === id) ?? null);
@@ -105,7 +187,7 @@ function AgendaApp({
   // Calendar and links ignore the list's search; each page loads what it shows.
   const changeView = (next: View) => {
     if (next === "calendar" || next === "links") {
-      setFilter(next === "links" ? "link" : "all");
+      setFilter("all");
       setSearch("");
     } else if (next === "entries" && view !== "entries") {
       setFilter("all");
@@ -125,9 +207,19 @@ function AgendaApp({
     }
   };
 
-  // Appointments live in the calendar, not in the notes list.
+  // Appointments live in the calendar and links on their own page.
   const notes = useMemo(
-    () => entries.filter((e) => !(e.is_reminder && e.reminder_date)),
+    () =>
+      entries.filter(
+        (e) =>
+          !(e.is_reminder && e.reminder_date) &&
+          e.type !== "link" &&
+          !!e.archived_at === showArchived
+      ),
+    [entries, showArchived]
+  );
+  const savedLinks = useMemo(
+    () => entries.filter((e) => e.type === "link"),
     [entries]
   );
 
@@ -221,27 +313,52 @@ function AgendaApp({
                   />
                 </div>
 
+                <div className="flex">
+                  <Badge
+                    variant={showArchived ? "default" : "outline"}
+                    className="cursor-pointer"
+                    onClick={() => setShowArchived((prev) => !prev)}
+                  >
+                    <Archive className="h-3 w-3" />
+                    Arquivadas
+                  </Badge>
+                </div>
+
                 {loading ? (
                   <div className="text-center py-12 text-muted-foreground">
                     Carregando...
                   </div>
                 ) : notes.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    {search
+                    {showArchived
+                      ? "Nenhuma anotação arquivada."
+                      : search
                       ? "Nenhum resultado encontrado."
                       : "Nenhuma entrada ainda. Crie a primeira!"}
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {notes.map((entry) => (
-                      <EntryCard
+                      <SwipeToArchive
                         key={entry.id}
+                        archived={!!entry.archived_at}
+                        onArchive={() => toggleEntryArchived(entry)}
+                      >
+                      <EntryCard
                         entry={entry}
+                        onToggleDone={toggleEntryDone}
                         onDelete={requestDelete}
                         onTrelloSend={
                           trelloConnected ? setTrelloSendEntry : undefined
                         }
+                        onEdit={setEditingEntry}
+                        onConvert={setConvertingEntry}
+                        onAttachLinks={setLinkingNote}
+                        attached={savedLinks.filter((link) =>
+                          entry.linked_ids?.includes(link.id)
+                        )}
                       />
+                      </SwipeToArchive>
                     ))}
                   </div>
                 )}
@@ -296,6 +413,10 @@ function AgendaApp({
               loading={loading}
               createEntry={createEntry}
               deleteEntry={requestDelete}
+              onEdit={setEditingEntry}
+              onToggleDone={toggleEntryDone}
+              onConvert={setConvertingEntry}
+              onArchive={toggleEntryArchived}
               onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
             />
           </>
@@ -306,6 +427,22 @@ function AgendaApp({
             </header>
 
             <TasksView {...tasksState} categories={categoriesState} />
+          </>
+        ) : view === "ideas" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Ideias</h2>
+            </header>
+
+            <IdeasView />
+          </>
+        ) : view === "finance" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Financeiro</h2>
+            </header>
+
+            <FinanceView />
           </>
         ) : (
           <>
@@ -332,6 +469,43 @@ function AgendaApp({
           onSaved={() => setNoteOpen(false)}
         />
       )}
+
+      {editingEntry && (
+        <NoteScreen
+          key={editingEntry.id}
+          createEntry={createEntry}
+          editing={{
+            content: editingEntry.content,
+            allowEmpty: editingEntry.type === "link",
+            save: async (content) =>
+              !!(await updateEntry(editingEntry.id, { content })),
+          }}
+          onCancel={() => setEditingEntry(null)}
+          onSaved={() => {
+            setEditingEntry(null);
+            setToast({ id: Date.now(), text: "Anotação salva" });
+          }}
+        />
+      )}
+
+      <ConvertDialog
+        entry={convertingEntry}
+        onClose={() => setConvertingEntry(null)}
+        onConvert={convertEntry}
+      />
+
+      <LinkPicker
+        note={linkingNote}
+        links={savedLinks}
+        onClose={() => setLinkingNote(null)}
+        onSave={async (linkedIds) => {
+          const note = linkingNote;
+          setLinkingNote(null);
+          if (note && (await updateEntry(note.id, { linked_ids: linkedIds }))) {
+            setToast({ id: Date.now(), text: "Links vinculados" });
+          }
+        }}
+      />
 
       <ConfirmDelete
         label={
