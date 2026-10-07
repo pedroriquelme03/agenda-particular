@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { format, isBefore, parseISO, startOfDay } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Archive,
   ArrowDownUp,
+  Eye,
+  EyeOff,
   CalendarClock,
   Check,
   FolderKanban,
@@ -61,8 +64,11 @@ export function TasksView({
   const [formOpen, setFormOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  // "added": last registered first. "date": nearest deadline first.
-  const [sortBy, setSortBy] = useState<"added" | "date">("added");
+  // The eye: on shows checked tasks in place, off hides them.
+  const [hideDone, setHideDone] = useState(false);
+  // The list is split by day. "date": the deadline day, nearest first.
+  // "added": the day the task was registered, latest first.
+  const [sortBy, setSortBy] = useState<"added" | "date">("date");
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
@@ -77,7 +83,10 @@ export function TasksView({
   // Done tasks stay in place, marked as done; the filter narrows to only them.
   const filtered = tasks.filter(
     (task) =>
-      !!task.archived_at === showArchived && (!showDone || !!task.completed_at)
+      !!task.archived_at === showArchived &&
+      (!showDone || !!task.completed_at) &&
+      // "Concluídas" asks for the checked ones, so it wins over the eye.
+      (showDone || !hideDone || !task.completed_at)
   );
 
   // Tasks arrive ordered by when they were added. A task without a deadline
@@ -90,6 +99,28 @@ export function TasksView({
     sortBy === "date"
       ? [...filtered].sort((a, b) => deadline(a) - deadline(b))
       : filtered;
+
+  // Consecutive tasks of the same day share a title such as "Quarta-feira 07/10".
+  const dayKey = (task: Task) =>
+    sortBy === "date"
+      ? (task.due_date ?? "")
+      : format(new Date(task.created_at), "yyyy-MM-dd");
+  const groups: { key: string; label: string; tasks: Task[] }[] = [];
+  for (const task of visible) {
+    const key = dayKey(task);
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.tasks.push(task);
+    } else {
+      groups.push({
+        key,
+        label: key
+          ? format(parseISO(key), "EEEE dd/MM", { locale: ptBR })
+          : "Sem prazo",
+        tasks: [task],
+      });
+    }
+  }
 
   const toggleArchived = (task: Task) => {
     const archive = !task.archived_at;
@@ -164,6 +195,25 @@ export function TasksView({
           >
             Data
           </Badge>
+          <button
+            type="button"
+            onClick={() => setHideDone((prev) => !prev)}
+            aria-pressed={!hideDone}
+            aria-label={hideDone ? "Mostrar concluídas" : "Ocultar concluídas"}
+            title={hideDone ? "Mostrar concluídas" : "Ocultar concluídas"}
+            className={cn(
+              "flex h-6 w-9 shrink-0 items-center justify-center rounded-full border transition-colors",
+              hideDone
+                ? "text-muted-foreground"
+                : "border-foreground bg-foreground text-background"
+            )}
+          >
+            {hideDone ? (
+              <EyeOff className="h-3.5 w-3.5" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
+          </button>
         </span>
       </div>
 
@@ -178,8 +228,13 @@ export function TasksView({
               : "Nenhuma tarefa ainda."}
         </div>
       ) : (
-        <div className="space-y-2">
-          {visible.map((task) => (
+        <div className="space-y-5">
+          {groups.map((group) => (
+          <section key={group.key || "none"} className="space-y-2">
+          <h3 className="text-sm font-semibold first-letter:uppercase">
+            {group.label}
+          </h3>
+          {group.tasks.map((task) => (
             <SwipeToArchive
               key={task.id}
               archived={!!task.archived_at}
@@ -197,6 +252,8 @@ export function TasksView({
               onDelete={() => setDeleteTarget(task)}
             />
             </SwipeToArchive>
+          ))}
+          </section>
           ))}
         </div>
       )}

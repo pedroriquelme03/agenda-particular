@@ -267,8 +267,6 @@ function AgendaApp({
       <div className="flex min-h-0 w-full flex-1">
       <Sidebar
         view={view}
-        filter={filter}
-        onFilterChange={setFilter}
         onViewChange={changeView}
         onSettingsClick={() => setTrelloConfigOpen(true)}
         onSignOut={onSignOut}

@@ -6,6 +6,8 @@ import { ptBR } from "date-fns/locale";
 import {
   Archive,
   ArrowDownUp,
+  Eye,
+  EyeOff,
   Calendar,
   Check,
   ChevronLeft,
@@ -181,9 +183,11 @@ export function EventManager({
   // Off: everything, with done items marked as such. On: only the done ones.
   const [showDone, setShowDone] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  // Order of the full list. "added": last registered first. "date": by the
-  // item's own date, earliest first.
-  const [listSort, setListSort] = useState<"added" | "date">("added");
+  // The eye: on shows checked items in place, off hides them.
+  const [hideDone, setHideDone] = useState(false);
+  // The full list is split by day. "date": the item's own day, earliest first.
+  // "added": the day it was registered, latest first.
+  const [listSort, setListSort] = useState<"added" | "date">("date");
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
   const dayPanelRef = useRef<HTMLDivElement>(null);
@@ -218,6 +222,8 @@ export function EventManager({
     return events.filter((event) => {
       if (!!event.archived !== showArchived) return false;
       if (showDone && !event.done) return false;
+      // "Concluídos" asks for the checked ones, so it wins over the eye.
+      if (hideDone && event.done && !showDone) return false;
 
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -239,7 +245,7 @@ export function EventManager({
 
       return true;
     });
-  }, [events, searchQuery, selectedCategories, showDone, showArchived]);
+  }, [events, searchQuery, selectedCategories, showDone, showArchived, hideDone]);
 
   const endBeforeStart = newEvent
     ? !!newEvent.endTime && newEvent.endTime <= newEvent.startTime
@@ -491,6 +497,7 @@ export function EventManager({
             )}
             {view === "list" && (
               <span className="ml-auto flex items-center gap-2">
+                <span className="sr-only">Ordenar</span>
                 <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
                 <Badge
                   variant={listSort === "added" ? "default" : "outline"}
@@ -507,6 +514,29 @@ export function EventManager({
                   Data
                 </Badge>
               </span>
+            )}
+            {onEventToggleDone && (
+              <button
+                type="button"
+                onClick={() => setHideDone((prev) => !prev)}
+                aria-pressed={!hideDone}
+                aria-label={hideDone ? "Mostrar concluídos" : "Ocultar concluídos"}
+                title={hideDone ? "Mostrar concluídos" : "Ocultar concluídos"}
+                className={cn(
+                  "flex h-6 w-9 shrink-0 items-center justify-center rounded-full border transition-colors",
+                  // In the list it follows the sort buttons; elsewhere it sits alone at the right.
+                  view !== "list" && "ml-auto",
+                  hideDone
+                    ? "text-muted-foreground"
+                    : "border-foreground bg-foreground text-background"
+                )}
+              >
+                {hideDone ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </button>
             )}
           </div>
         )}
@@ -1141,26 +1171,25 @@ function ListView({
   singleDay?: boolean;
   emptyText?: string;
   ascending?: boolean;
-  // One flat list, last registered first; each item then shows its own date.
+  // Split by the day each item was registered, latest first; each item then
+  // shows its own date, since the day title is no longer that date.
   byCreation?: boolean;
 }) {
-  const registeredAt = (event: Event) =>
-    (event.createdAt ?? event.startTime).getTime();
+  // The date an item is grouped and ordered by.
+  const dayOf = (event: Event) =>
+    byCreation ? (event.createdAt ?? event.startTime) : event.startTime;
 
-  // Grouped by day; latest date first unless `ascending`.
+  // Grouped by day; latest first unless `ascending` (by creation: always latest first).
+  const direction = byCreation ? -1 : ascending ? 1 : -1;
   const groups: { date: Date; events: Event[] }[] = [];
   [...events]
-    .sort((a, b) =>
-      byCreation
-        ? registeredAt(b) - registeredAt(a)
-        : (a.startTime.getTime() - b.startTime.getTime()) * (ascending ? 1 : -1)
-    )
+    .sort((a, b) => (dayOf(a).getTime() - dayOf(b).getTime()) * direction)
     .forEach((event) => {
       const last = groups[groups.length - 1];
-      if (last && (byCreation || isSameDay(last.date, event.startTime))) {
+      if (last && isSameDay(last.date, dayOf(event))) {
         last.events.push(event);
       } else {
-        groups.push({ date: event.startTime, events: [event] });
+        groups.push({ date: dayOf(event), events: [event] });
       }
     });
 
@@ -1169,9 +1198,9 @@ function ListView({
       <div className="space-y-6">
         {groups.map((group) => (
           <div key={group.date.toISOString()} className="space-y-3">
-            {!singleDay && !byCreation && (
-              <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
-                {format(group.date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+            {!singleDay && (
+              <h3 className="text-sm font-semibold first-letter:uppercase">
+                {format(group.date, "EEEE dd/MM", { locale: ptBR })}
               </h3>
             )}
             <div className="space-y-2">
