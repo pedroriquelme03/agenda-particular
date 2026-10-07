@@ -9,6 +9,7 @@ import { TrelloConfigDialog, TrelloSendDialog } from "@/components/trello-sync";
 import { TrelloBoards } from "@/components/trello-boards";
 import { useEntries } from "@/hooks/use-entries";
 import { useTasks } from "@/hooks/use-tasks";
+import { useCategories } from "@/hooks/use-categories";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineBanner, useStandalone } from "@/components/pwa";
 import { NoteScreen, PwaHome } from "@/components/pwa-home";
@@ -74,6 +75,7 @@ function AgendaApp({
   } = useEntries();
 
   const tasksState = useTasks();
+  const categoriesState = useCategories();
 
   const [view, setView] = useState<View>("entries");
   const [trelloConfigOpen, setTrelloConfigOpen] = useState(false);
@@ -158,6 +160,7 @@ function AgendaApp({
         userName={userName}
         entries={entries}
         tasks={tasksState.tasks}
+        categories={categoriesState}
         createEntry={createEntry}
         onOpenLinks={() => navigate("links")}
         onOpenTasks={() => navigate("tasks")}
@@ -276,6 +279,7 @@ function AgendaApp({
                     tasks={tasksState.tasks}
                     updateTask={tasksState.updateTask}
                     deleteTask={tasksState.deleteTask}
+                    categories={categoriesState}
                   />
                 )}
               </div>
@@ -301,7 +305,7 @@ function AgendaApp({
               <h2 className="text-lg font-semibold">Tarefas</h2>
             </header>
 
-            <TasksView {...tasksState} />
+            <TasksView {...tasksState} categories={categoriesState} />
           </>
         ) : (
           <>

@@ -6,7 +6,13 @@ import type { Task } from "@/lib/types";
 
 export type TaskInput = Pick<
   Task,
-  "title" | "description" | "project" | "due_date" | "due_time" | "value"
+  | "title"
+  | "description"
+  | "project"
+  | "due_date"
+  | "due_time"
+  | "value"
+  | "category_id"
 >;
 
 export function useTasks() {

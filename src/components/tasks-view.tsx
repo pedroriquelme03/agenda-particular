@@ -16,9 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { CategoryPicker, categoryColorClass } from "@/components/category-picker";
+import type { CategoriesState } from "@/hooks/use-categories";
 import { Toast, type ToastMessage } from "@/components/toast";
 import type { TaskInput, useTasks } from "@/hooks/use-tasks";
-import type { Task } from "@/lib/types";
+import type { Category, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -44,7 +46,8 @@ export function TasksView({
   createTask,
   updateTask,
   deleteTask,
-}: ReturnType<typeof useTasks>) {
+  categories,
+}: ReturnType<typeof useTasks> & { categories: CategoriesState }) {
   const [formOpen, setFormOpen] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -58,7 +61,8 @@ export function TasksView({
     }
   };
 
-  const visible = tasks.filter((task) => !!task.completed_at === showDone);
+  // Done tasks stay in place, marked as done; the filter narrows to only them.
+  const visible = showDone ? tasks.filter((task) => task.completed_at) : tasks;
 
   const toggleDone = (task: Task) => {
     const done = !task.completed_at;
@@ -97,7 +101,7 @@ export function TasksView({
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
       ) : visible.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-          {showDone ? "Nenhuma tarefa concluída." : "Nenhuma tarefa pendente."}
+          {showDone ? "Nenhuma tarefa concluída." : "Nenhuma tarefa ainda."}
         </div>
       ) : (
         <div className="space-y-2">
@@ -105,6 +109,9 @@ export function TasksView({
             <TaskCard
               key={task.id}
               task={task}
+              category={categories.categories.find(
+                (category) => category.id === task.category_id
+              )}
               onToggleDone={() => toggleDone(task)}
               onDelete={() => setDeleteTarget(task)}
             />
@@ -130,6 +137,7 @@ export function TasksView({
             <DialogTitle>Nova tarefa</DialogTitle>
           </DialogHeader>
           <TaskForm
+            categories={categories}
             onCancel={() => setFormOpen(false)}
             onSubmit={async (input) => {
               const task = await createTask(input);
@@ -158,10 +166,12 @@ export function TasksView({
 
 function TaskCard({
   task,
+  category,
   onToggleDone,
   onDelete,
 }: {
   task: Task;
+  category?: Category;
   onToggleDone: () => void;
   onDelete: () => void;
 }) {
@@ -177,7 +187,7 @@ function TaskCard({
       : isBefore(dueDate, startOfDay(new Date())));
 
   return (
-    <div className="rounded-lg border bg-card p-3 sm:p-4">
+    <div className={cn("rounded-lg border bg-card p-3 sm:p-4", done && "opacity-60")}>
       <div className="flex items-start gap-3">
         <button
           onClick={onToggleDone}
@@ -207,6 +217,17 @@ function TaskCard({
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {category && (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={cn(
+                    "h-2.5 w-2.5 rounded-full",
+                    categoryColorClass(category.color)
+                  )}
+                />
+                {category.name}
+              </span>
+            )}
             {task.project && (
               <span className="flex items-center gap-1">
                 <FolderKanban className="h-3.5 w-3.5" />
@@ -249,9 +270,11 @@ function TaskCard({
 }
 
 function TaskForm({
+  categories,
   onSubmit,
   onCancel,
 }: {
+  categories: CategoriesState;
   onSubmit: (input: TaskInput) => Promise<boolean>;
   onCancel: () => void;
 }) {
@@ -259,6 +282,7 @@ function TaskForm({
   const [description, setDescription] = useState("");
   const [project, setProject] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [dueTime, setDueTime] = useState("");
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -278,6 +302,7 @@ function TaskForm({
       project: project.trim() || null,
       due_date: dueDate || null,
       due_time: dueDate && dueTime ? dueTime : null,
+      category_id: categoryId,
       value: parseValue(value),
     });
     setSaving(false);
@@ -342,6 +367,11 @@ function TaskForm({
           disabled={!dueDate}
           className="block h-12 appearance-none text-base"
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Categoria</Label>
+        <CategoryPicker state={categories} value={categoryId} onChange={setCategoryId} />
       </div>
 
       <div className="space-y-2">

@@ -38,10 +38,14 @@ export interface Event {
   description?: string;
   startTime: Date;
   endTime: Date;
+  // When the item was registered; orders the "everything" list.
+  createdAt?: Date;
   // False when the end was not informed; endTime is then only a placeholder.
   hasEnd?: boolean;
   color: string;
   category?: string;
+  // The user's own category for the item, when the host app has them.
+  categoryId?: string | null;
   tags?: string[];
   // Whether the date can be changed (dragging or editing).
   movable?: boolean;
@@ -59,6 +63,7 @@ export interface EventDraft {
   description: string;
   startTime: Date;
   endTime: Date | null;
+  categoryId: string | null;
 }
 
 type CalendarView = "month" | "week" | "day" | "list";
@@ -73,10 +78,17 @@ export interface EventManagerProps {
   categories?: string[];
   colors?: ColorClasses[];
   defaultView?: CalendarView;
+  // Shown in the dialog for items that can have a category.
+  renderCategoryPicker?: (
+    value: string | null,
+    onChange: (id: string | null) => void
+  ) => React.ReactNode;
   className?: string;
 }
 
 const defaultColors: ColorClasses[] = [
+  { name: "Amarelo", value: "yellow", bg: "bg-yellow-500", text: "text-yellow-700" },
+  { name: "Cinza", value: "gray", bg: "bg-neutral-500", text: "text-neutral-700" },
   { name: "Azul", value: "blue", bg: "bg-blue-500", text: "text-blue-700" },
   { name: "Verde", value: "green", bg: "bg-green-500", text: "text-green-700" },
   { name: "Roxo", value: "purple", bg: "bg-purple-500", text: "text-purple-700" },
@@ -147,6 +159,7 @@ export function EventManager({
   categories = [],
   colors = defaultColors,
   defaultView = "month",
+  renderCategoryPicker,
   className,
 }: EventManagerProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -158,7 +171,7 @@ export function EventManager({
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   // Day tapped in the month grid; its items are listed below the calendar.
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  // Off: only what is still to do. On: the history of what was checked off.
+  // Off: everything, with done items marked as such. On: only the done ones.
   const [showDone, setShowDone] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
@@ -192,7 +205,7 @@ export function EventManager({
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
-      if (!!event.done !== showDone) return false;
+      if (showDone && !event.done) return false;
 
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -278,6 +291,14 @@ export function EventManager({
     [draggedEvent, onEventUpdate]
   );
 
+  // Jumps the calendar to a chosen date and opens that day's items.
+  const goToDate = (date: Date) => {
+    setCurrentDate(date);
+    setSelectedDay(date);
+    // The full list has no notion of a current day.
+    if (view === "list") setView("day");
+  };
+
   const navigateDate = (direction: "prev" | "next") => {
     const step = direction === "next" ? 1 : -1;
     setCurrentDate((prev) => {
@@ -330,13 +351,30 @@ export function EventManager({
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentDate(new Date())}
-            >
-              Hoje
-            </Button>
+            {/* The native date picker sits invisibly over the label, so tapping it opens the picker. */}
+            <div className="relative">
+              <Button variant="outline" size="sm" tabIndex={-1}>
+                <Calendar className="h-4 w-4" />
+                {isSameDay(selectedDay ?? currentDate, new Date())
+                  ? "Hoje"
+                  : format(selectedDay ?? currentDate, "dd/MM")}
+              </Button>
+              <input
+                type="date"
+                aria-label="Escolher data"
+                // Desktop browsers only open the picker from the small icon otherwise.
+                onClick={(e) => e.currentTarget.showPicker?.()}
+                value={format(selectedDay ?? currentDate, "yyyy-MM-dd")}
+                onChange={(e) => {
+                  // Clearing the field goes back to today.
+                  const date = e.target.value
+                    ? new Date(e.target.value + "T00:00")
+                    : new Date();
+                  if (!Number.isNaN(date.getTime())) goToDate(date);
+                }}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </div>
             <Button
               variant="outline"
               size="icon"
@@ -372,6 +410,7 @@ export function EventManager({
                   description: "",
                   startTime: nextFullHour(),
                   endTime: null,
+                  categoryId: null,
                 })
               }
             >
@@ -465,6 +504,7 @@ export function EventManager({
                         description: "",
                         startTime: defaultTimeOn(selectedDay),
                         endTime: null,
+                        categoryId: null,
                       })
                     }
                   >
@@ -496,6 +536,7 @@ export function EventManager({
           onEventClick={setSelectedEvent}
           onToggleDone={toggleDone}
           getColorClasses={getColorClasses}
+          byCreation
         />
       )}
 
@@ -655,6 +696,21 @@ export function EventManager({
               </div>
             )}
 
+            {renderCategoryPicker && (newEvent || selectedEvent?.checkable) && (
+              <div className="space-y-2">
+                <Label>Categoria</Label>
+                {renderCategoryPicker(
+                  newEvent ? newEvent.categoryId : (selectedEvent?.categoryId ?? null),
+                  (id) =>
+                    newEvent
+                      ? setNewEvent({ ...newEvent, categoryId: id })
+                      : setSelectedEvent((prev) =>
+                          prev ? { ...prev, categoryId: id } : null
+                        )
+                )}
+              </div>
+            )}
+
             {!newEvent && selectedEvent?.tags && selectedEvent.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {selectedEvent.tags.map((tag) => (
@@ -741,7 +797,8 @@ function EventCard({
         {...dragProps}
         title={timeRange(event) + " " + event.title}
         className={cn(
-          "cursor-pointer rounded opacity-80",
+          "cursor-pointer rounded",
+          event.done ? "opacity-40" : "opacity-80",
           variant === "detailed" ? "min-h-14 sm:min-h-16" : "min-h-10 sm:min-h-14",
           colorClasses.bg
         )}
@@ -755,6 +812,7 @@ function EventCard({
         {...dragProps}
         className={cn(
           "cursor-pointer rounded-lg p-3 text-white transition-shadow hover:shadow-lg",
+          event.done && "opacity-50 line-through",
           colorClasses.bg
         )}
       >
@@ -780,6 +838,7 @@ function EventCard({
       className={cn(
         "cursor-pointer truncate rounded text-xs font-medium text-white transition-shadow hover:shadow-md",
         variant === "compact" ? "px-1 py-0.5 sm:px-1.5" : "px-2 py-1",
+        event.done && "opacity-50 line-through",
         colorClasses.bg
       )}
     >
@@ -997,23 +1056,30 @@ function ListView({
   singleDay = false,
   emptyText = "Nada encontrado",
   ascending = false,
+  byCreation = false,
 }: Pick<ViewProps, "events" | "onEventClick" | "getColorClasses"> & {
   onToggleDone?: (id: string, done: boolean) => void;
   // The list is for one day whose title is shown elsewhere: no date headers.
   singleDay?: boolean;
   emptyText?: string;
   ascending?: boolean;
+  // One flat list, last registered first; each item then shows its own date.
+  byCreation?: boolean;
 }) {
-  // Grouped by day; newest first unless `ascending`.
+  const registeredAt = (event: Event) =>
+    (event.createdAt ?? event.startTime).getTime();
+
+  // Grouped by day; latest date first unless `ascending`.
   const groups: { date: Date; events: Event[] }[] = [];
   [...events]
-    .sort(
-      (a, b) =>
-        (a.startTime.getTime() - b.startTime.getTime()) * (ascending ? 1 : -1)
+    .sort((a, b) =>
+      byCreation
+        ? registeredAt(b) - registeredAt(a)
+        : (a.startTime.getTime() - b.startTime.getTime()) * (ascending ? 1 : -1)
     )
     .forEach((event) => {
       const last = groups[groups.length - 1];
-      if (last && isSameDay(last.date, event.startTime)) {
+      if (last && (byCreation || isSameDay(last.date, event.startTime))) {
         last.events.push(event);
       } else {
         groups.push({ date: event.startTime, events: [event] });
@@ -1025,7 +1091,7 @@ function ListView({
       <div className="space-y-6">
         {groups.map((group) => (
           <div key={group.date.toISOString()} className="space-y-3">
-            {!singleDay && (
+            {!singleDay && !byCreation && (
               <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
                 {format(group.date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
               </h3>
@@ -1035,7 +1101,10 @@ function ListView({
                 <div
                   key={event.id}
                   onClick={() => onEventClick(event)}
-                  className="cursor-pointer rounded-lg border bg-card p-3 transition-shadow hover:shadow-md sm:p-4"
+                  className={cn(
+                    "cursor-pointer rounded-lg border bg-card p-3 transition-shadow hover:shadow-md sm:p-4",
+                    event.done && "opacity-60"
+                  )}
                 >
                   <div className="flex items-start gap-2 sm:gap-3">
                     {event.checkable && onToggleDone ? (
@@ -1088,6 +1157,7 @@ function ListView({
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground sm:text-xs">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
+                          {byCreation && format(event.startTime, "dd/MM") + " · "}
                           {timeRange(event)}
                         </span>
                         {event.tags

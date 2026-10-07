@@ -3,7 +3,9 @@
 import { useMemo } from "react";
 import { EventManager, type Event, type EventDraft } from "@/components/event-manager";
 import { format } from "date-fns";
-import type { Entry, EntryType, Task } from "@/lib/types";
+import { CategoryPicker } from "@/components/category-picker";
+import type { CategoriesState } from "@/hooks/use-categories";
+import type { Category, Entry, EntryType, Task } from "@/lib/types";
 
 const APPOINTMENT = "Compromisso";
 const TASK = "Tarefa";
@@ -31,7 +33,11 @@ const categoryColors: Record<string, string> = {
 const HOUR_MS = 60 * 60 * 1000;
 
 // Appointments sit on their scheduled date; everything else on the day it was created.
-function toEvent(entry: Entry): Event {
+// A category chosen by the user sets the color and shows as the first tag.
+type CategoryLookup = Map<string, Category>;
+
+function toEvent(entry: Entry, lookup: CategoryLookup): Event {
+  const custom = entry.category_id ? lookup.get(entry.category_id) : undefined;
   const isAppointment = entry.is_reminder && !!entry.reminder_date;
   const category = isAppointment ? APPOINTMENT : typeCategories[entry.type];
   const startTime = new Date(
@@ -42,6 +48,7 @@ function toEvent(entry: Entry): Event {
 
   return {
     id: entry.id,
+    createdAt: new Date(entry.created_at),
     title: entry.title || firstLine.slice(0, 60) || category,
     description: entry.content,
     startTime,
@@ -49,9 +56,10 @@ function toEvent(entry: Entry): Event {
       ? new Date(entry.reminder_end_date!)
       : new Date(startTime.getTime() + HOUR_MS),
     hasEnd,
-    color: categoryColors[category],
+    color: custom?.color ?? categoryColors[category],
     category,
-    tags: entry.tags,
+    categoryId: entry.category_id ?? null,
+    tags: custom ? [custom.name, ...entry.tags] : entry.tags,
     movable: isAppointment,
     checkable: isAppointment,
     done: !!entry.completed_at,
@@ -59,19 +67,22 @@ function toEvent(entry: Entry): Event {
 }
 
 // Only tasks with a deadline have a day to sit on.
-function taskToEvent(task: Task): Event {
+function taskToEvent(task: Task, lookup: CategoryLookup): Event {
+  const custom = task.category_id ? lookup.get(task.category_id) : undefined;
   const startTime = new Date(`${task.due_date}T${task.due_time || "00:00"}`);
   if (!task.due_time) startTime.setHours(TASK_HOUR, 0, 0, 0);
 
   return {
     id: TASK_PREFIX + task.id,
+    createdAt: new Date(task.created_at),
     title: task.title,
     description: task.description,
     startTime,
     endTime: new Date(startTime.getTime() + HOUR_MS),
-    color: categoryColors[TASK],
+    color: custom?.color ?? categoryColors[TASK],
     category: TASK,
-    tags: task.project ? [task.project] : [],
+    categoryId: task.category_id ?? null,
+    tags: [custom?.name, task.project].filter((tag): tag is string => !!tag),
     movable: true,
     dateOnly: !task.due_time,
     fixedDuration: true,
@@ -90,6 +101,7 @@ interface CalendarViewProps {
   tasks: Task[];
   updateTask: (id: string, updates: Partial<Task>) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
+  categories: CategoriesState;
 }
 
 export function CalendarView({
@@ -100,14 +112,19 @@ export function CalendarView({
   tasks,
   updateTask,
   deleteTask,
+  categories,
 }: CalendarViewProps) {
-  const events = useMemo(
-    () => [
-      ...entries.map(toEvent),
-      ...tasks.filter((task) => task.due_date).map(taskToEvent),
-    ],
-    [entries, tasks]
-  );
+  const events = useMemo(() => {
+    const lookup: CategoryLookup = new Map(
+      categories.categories.map((category) => [category.id, category])
+    );
+    return [
+      ...entries.map((entry) => toEvent(entry, lookup)),
+      ...tasks
+        .filter((task) => task.due_date)
+        .map((task) => taskToEvent(task, lookup)),
+    ];
+  }, [entries, tasks, categories.categories]);
 
   const handleCreate = (draft: EventDraft) => {
     createEntry({
@@ -122,6 +139,7 @@ export function CalendarView({
       reminder_date: draft.startTime.toISOString(),
       reminder_end_date: draft.endTime ? draft.endTime.toISOString() : null,
       tags: ["compromisso"],
+      category_id: draft.categoryId,
     });
   };
 
@@ -151,6 +169,12 @@ export function CalendarView({
         ) {
           taskUpdates.due_time = format(changes.startTime, "HH:mm:ss");
         }
+      }
+      if (
+        changes.categoryId !== undefined &&
+        changes.categoryId !== current.categoryId
+      ) {
+        taskUpdates.category_id = changes.categoryId;
       }
       if (Object.keys(taskUpdates).length > 0) {
         updateTask(id.slice(TASK_PREFIX.length), taskUpdates);
@@ -185,12 +209,22 @@ export function CalendarView({
       if (end !== previous) updates.reminder_end_date = end;
     }
 
+    if (
+      changes.categoryId !== undefined &&
+      changes.categoryId !== current.categoryId
+    ) {
+      updates.category_id = changes.categoryId;
+    }
+
     if (Object.keys(updates).length > 0) updateEntry(id, updates);
   };
 
   return (
     <EventManager
       events={events}
+      renderCategoryPicker={(value, onChange) => (
+        <CategoryPicker state={categories} value={value} onChange={onChange} />
+      )}
       onEventCreate={handleCreate}
       onEventUpdate={handleUpdate}
       onEventDelete={(id) =>

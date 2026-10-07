@@ -18,7 +18,8 @@ interface ToastProps {
 }
 
 // Short confirmation that slides up from the bottom and removes itself.
-export function Toast({ toast, onDismiss, duration = 4 }: ToastProps) {
+// Dragging it down dismisses it early.
+export function Toast({ toast, onDismiss, duration = 2.5 }: ToastProps) {
   return (
     <AnimatePresence>
       {toast && (
@@ -29,7 +30,13 @@ export function Toast({ toast, onDismiss, duration = 4 }: ToastProps) {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 48, opacity: 0 }}
           transition={{ type: "spring", stiffness: 420, damping: 32 }}
-          className="fixed inset-x-4 bottom-[calc(9.5rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-sm overflow-hidden rounded-xl bg-foreground text-background shadow-lg"
+          drag="y"
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.7 }}
+          onDragEnd={(_event, info) => {
+            if (info.offset.y > 40 || info.velocity.y > 300) onDismiss(toast.id);
+          }}
+          className="touch-none fixed inset-x-4 bottom-[calc(9.5rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-sm overflow-hidden rounded-xl bg-foreground text-background shadow-lg"
         >
           <div className="flex items-center gap-3 px-4 py-3">
             <motion.span

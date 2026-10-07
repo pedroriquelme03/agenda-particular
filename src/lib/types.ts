@@ -16,8 +16,18 @@ export interface Entry {
   // Set when an appointment is checked off as done.
   completed_at?: string | null;
   tags: string[];
+  // The account's own category, if one was chosen (appointments).
+  category_id?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  // One of the values in CATEGORY_COLORS.
+  color: string;
+  created_at: string;
 }
 
 export interface Task {
@@ -30,6 +40,7 @@ export interface Task {
   // Optional time of day for the deadline, "HH:mm:ss".
   due_time?: string | null;
   value: number | null;
+  category_id?: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

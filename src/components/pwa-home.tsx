@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OfflineBanner, useVisibleArea } from "@/components/pwa";
 import { NotificationsButton } from "@/components/notifications-button";
+import { CategoryPicker } from "@/components/category-picker";
+import type { CategoriesState } from "@/hooks/use-categories";
 import { useDictation } from "@/hooks/use-dictation";
 import type { Entry, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,7 @@ interface PwaHomeProps {
   userName?: string;
   entries: Entry[];
   tasks: Task[];
+  categories: CategoriesState;
   createEntry: CreateEntry;
   onOpenLinks: () => void;
   onOpenTasks: () => void;
@@ -47,6 +50,7 @@ export function PwaHome({
   userName,
   entries,
   tasks,
+  categories,
   createEntry,
   onOpenLinks,
   onOpenTasks,
@@ -74,6 +78,7 @@ export function PwaHome({
   if (screen === "appointment") {
     return (
       <AppointmentScreen
+        categories={categories}
         createEntry={createEntry}
         onCancel={() => backHome()}
         onSaved={() => backHome("Compromisso salvo.")}
@@ -90,7 +95,6 @@ export function PwaHome({
         (entry) =>
           entry.is_reminder &&
           !!entry.reminder_date &&
-          !entry.completed_at &&
           isSameDay(new Date(entry.reminder_date), today)
       )
       .map((entry) => {
@@ -106,12 +110,12 @@ export function PwaHome({
               : ""),
           title: entry.title || "Compromisso",
           detail: entry.content,
+          done: !!entry.completed_at,
         };
       }),
     ...tasks
       .filter(
         (task) =>
-          !task.completed_at &&
           !!task.due_date &&
           isSameDay(new Date(task.due_date + "T00:00"), today)
       )
@@ -124,6 +128,7 @@ export function PwaHome({
         time: task.due_time ? task.due_time.slice(0, 5) : "Hoje",
         title: task.title,
         detail: task.project || task.description,
+        done: !!task.completed_at,
       })),
   ].sort((x, y) => x.sortKey - y.sortKey);
 
@@ -163,12 +168,23 @@ export function PwaHome({
           ) : (
             <ul className="divide-y rounded-xl border">
               {todayItems.map((item) => (
-                <li key={item.kind + item.id} className="flex items-start gap-3 px-3 py-2.5">
+                <li
+                  key={item.kind + item.id}
+                  className={cn(
+                    "flex items-start gap-3 px-3 py-2.5",
+                    item.done && "opacity-50"
+                  )}
+                >
                   <span className="w-[5.5rem] shrink-0 text-sm font-semibold tabular-nums">
                     {item.time}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
+                    <span
+                      className={cn(
+                        "block truncate text-sm font-medium",
+                        item.done && "line-through"
+                      )}
+                    >
                       {item.title}
                     </span>
                     {item.detail && (
@@ -360,8 +376,14 @@ export function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   );
 }
 
-function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
+function AppointmentScreen({
+  categories,
+  createEntry,
+  onCancel,
+  onSaved,
+}: ScreenProps & { categories: CategoriesState }) {
   const [title, setTitle] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -394,6 +416,7 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
         ? new Date(`${date}T${endTime}`).toISOString()
         : null,
       tags: ["compromisso"],
+      category_id: categoryId,
     });
     setSaving(false);
     if (entry) onSaved();
@@ -482,6 +505,15 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
             onChange={(e) => setLocation(e.target.value)}
             placeholder="Ex.: Escritório"
             className="h-12 text-base"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Categoria</Label>
+          <CategoryPicker
+            state={categories}
+            value={categoryId}
+            onChange={setCategoryId}
           />
         </div>
 

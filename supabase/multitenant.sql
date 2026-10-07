@@ -219,3 +219,31 @@ revoke execute on function public.push_cron_remove_subscription(text, text) from
 grant execute on function public.push_cron_data(text, timestamptz, timestamptz, date, date) to anon, authenticated;
 grant execute on function public.push_cron_mark_sent(text, text, uuid, text, timestamptz) to anon, authenticated;
 grant execute on function public.push_cron_remove_subscription(text, text) to anon, authenticated;
+
+-- 5. Categories ---------------------------------------------------------------
+
+-- Categories each account defines for its appointments and tasks.
+-- The color is what those items use in the calendar.
+create table if not exists public.categories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  name text not null,
+  color text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_categories_user on public.categories (user_id);
+
+alter table public.categories enable row level security;
+drop policy if exists "categories_owner" on public.categories;
+create policy "categories_owner" on public.categories
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.categories from anon;
+grant select, insert, update, delete on public.categories to authenticated;
+
+alter table public.entries
+  add column if not exists category_id uuid references public.categories (id) on delete set null;
+alter table public.tasks
+  add column if not exists category_id uuid references public.categories (id) on delete set null;
