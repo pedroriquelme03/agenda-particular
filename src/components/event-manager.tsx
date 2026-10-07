@@ -457,7 +457,7 @@ export function EventManager({
         )}
 
         {categories.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex flex-wrap gap-2 pb-1">
             {categories.map((category) => {
               const isSelected = selectedCategories.includes(category);
               return (
@@ -951,7 +951,7 @@ function WeekView({
   });
 
   return (
-    <div className="overflow-auto rounded-xl border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card">
       <div className="grid grid-cols-8 border-b">
         <div className="border-r p-2 text-center text-xs font-medium sm:text-sm">
           Hora
@@ -1005,6 +1005,14 @@ function WeekView({
   );
 }
 
+// The day starts at 5h; the small hours come last, as the end of the day.
+const dayPeriods = [
+  { label: "Manhã", hours: [5, 6, 7, 8, 9, 10, 11] },
+  { label: "Tarde", hours: [12, 13, 14, 15, 16, 17] },
+  { label: "Noite", hours: [18, 19, 20, 21, 22, 23] },
+  { label: "Madrugada", hours: [0, 1, 2, 3, 4] },
+];
+
 function DayView({
   currentDate,
   events,
@@ -1016,8 +1024,14 @@ function DayView({
   );
 
   return (
-    <div className="overflow-auto rounded-xl border bg-card">
-      {hours.map((hour) => (
+    <div className="space-y-5">
+      {dayPeriods.map((period) => (
+        <section key={period.label} className="space-y-2">
+          <h3 className="text-sm font-semibold text-muted-foreground">
+            {period.label}
+          </h3>
+          <div className="overflow-hidden rounded-xl border bg-card">
+      {period.hours.map((hour) => (
         <div
           key={hour}
           className="flex border-b last:border-b-0"
@@ -1043,6 +1057,9 @@ function DayView({
             </div>
           </div>
         </div>
+      ))}
+          </div>
+        </section>
       ))}
     </div>
   );

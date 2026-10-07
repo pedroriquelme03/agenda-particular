@@ -127,4 +127,20 @@
   html {
     @apply font-sans;
   }
+
+  /* No sideways scrolling anywhere: the page never pans or bounces
+     horizontally, and no scroll container scrolls on the x axis. */
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    touch-action: pan-y pinch-zoom;
+  }
+  * {
+    overscroll-behavior-x: none;
+  }
+  [data-slot="scroll-area-viewport"] {
+    overflow-x: hidden !important;
+  }
 }
