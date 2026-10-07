@@ -79,3 +79,32 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(handleAsset(request));
   }
 });
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  const data = event.data.json();
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag,
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+// Tapping a notification brings the app forward, opening it if needed.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windows) => {
+        for (const client of windows) {
+          if ("focus" in client) return client.focus();
+        }
+        return self.clients.openWindow(event.notification.data?.url || "/");
+      })
+  );
+});

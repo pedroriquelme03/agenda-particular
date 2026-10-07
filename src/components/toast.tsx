@@ -29,7 +29,7 @@ export function Toast({ toast, onDismiss, duration = 4 }: ToastProps) {
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 48, opacity: 0 }}
           transition={{ type: "spring", stiffness: 420, damping: 32 }}
-          className="fixed inset-x-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-sm overflow-hidden rounded-xl bg-foreground text-background shadow-lg"
+          className="fixed inset-x-4 bottom-[calc(9.5rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-sm overflow-hidden rounded-xl bg-foreground text-background shadow-lg"
         >
           <div className="flex items-center gap-3 px-4 py-3">
             <motion.span

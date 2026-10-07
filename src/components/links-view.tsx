@@ -5,6 +5,13 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EntryCard } from "@/components/entry-card";
 import type { Entry } from "@/lib/types";
 
@@ -31,6 +38,7 @@ export function LinksView({
   deleteEntry,
   onTrelloSend,
 }: LinksViewProps) {
+  const [formOpen, setFormOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -43,14 +51,13 @@ export function LinksView({
     if (!url.trim() || saving) return;
     setSaving(true);
     setSaveError(false);
-    const linkUrl = normalizeUrl(url);
     const entry = await createEntry({
       type: "link",
       title: title.trim() || null,
       content: "",
       image_url: null,
       audio_url: null,
-      link_url: linkUrl,
+      link_url: normalizeUrl(url),
       trello_card_id: null,
       is_reminder: false,
       reminder_date: null,
@@ -60,70 +67,93 @@ export function LinksView({
     if (entry) {
       setUrl("");
       setTitle("");
+      setFormOpen(false);
     } else {
       setSaveError(true);
     }
   };
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="space-y-3 rounded-xl border p-4">
-        <div className="space-y-2">
-          <Label htmlFor="link-url">Link</Label>
-          <Input
-            id="link-url"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://..."
-            className="h-12 text-base"
-          />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="mx-auto max-w-2xl p-4 md:p-6">
+          {loading && links.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Carregando...
+            </div>
+          ) : links.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              Nenhum link ainda. Adicione o primeiro!
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {links.map((entry) => (
+                <EntryCard
+                  key={entry.id}
+                  entry={entry}
+                  onDelete={deleteEntry}
+                  onTrelloSend={onTrelloSend}
+                />
+              ))}
+            </div>
+          )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="link-title">Título (opcional)</Label>
-          <Input
-            id="link-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ex.: Artigo para ler depois"
-            className="h-12 text-base"
-          />
-        </div>
-        {saveError && (
-          <p className="text-sm text-destructive">
-            Não foi possível salvar. Tente de novo.
-          </p>
-        )}
+      </ScrollArea>
+
+      <div className="border-t px-4 py-3">
         <Button
-          type="submit"
-          disabled={!url.trim() || saving}
-          className="h-12 w-full text-base"
+          onClick={() => setFormOpen(true)}
+          className="mx-auto flex h-12 w-full max-w-2xl text-base"
         >
           <Plus className="h-4 w-4" />
-          {saving ? "Salvando..." : "Adicionar link"}
+          Novo link
         </Button>
-      </form>
+      </div>
 
-      {loading && links.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">Carregando...</div>
-      ) : links.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          Nenhum link ainda. Adicione o primeiro!
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {links.map((entry) => (
-            <EntryCard
-              key={entry.id}
-              entry={entry}
-              onDelete={deleteEntry}
-              onTrelloSend={onTrelloSend}
-            />
-          ))}
-        </div>
-      )}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Novo link</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="link-url">Link</Label>
+              <Input
+                id="link-url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://..."
+                className="h-12 text-base"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="link-title">Título (opcional)</Label>
+              <Input
+                id="link-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ex.: Artigo para ler depois"
+                className="h-12 text-base"
+              />
+            </div>
+            {saveError && (
+              <p className="text-sm text-destructive">
+                Não foi possível salvar. Tente de novo.
+              </p>
+            )}
+            <Button
+              type="submit"
+              disabled={!url.trim() || saving}
+              className="h-12 w-full text-base"
+            >
+              {saving ? "Salvando..." : "Adicionar link"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

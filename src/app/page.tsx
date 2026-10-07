@@ -59,6 +59,9 @@ export default function Home() {
 
   const navigate = (page: Page) => {
     if (page === "home") {
+      // Home lists today's appointments, so it needs every entry loaded.
+      setFilter("all");
+      setSearch("");
       setShowAgenda(false);
     } else {
       changeView(page);
@@ -98,6 +101,7 @@ export default function Home() {
   if (standalone && !showAgenda) {
     return (
       <PwaHome
+        entries={entries}
         createEntry={createEntry}
         onOpenLinks={() => navigate("links")}
         onOpenTasks={() => navigate("tasks")}
@@ -215,17 +219,13 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Links</h2>
             </header>
 
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="max-w-2xl mx-auto p-4 md:p-6">
-                <LinksView
-                  entries={entries}
-                  loading={loading}
-                  createEntry={createEntry}
-                  deleteEntry={deleteEntry}
-                  onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
-                />
-              </div>
-            </ScrollArea>
+            <LinksView
+              entries={entries}
+              loading={loading}
+              createEntry={createEntry}
+              deleteEntry={deleteEntry}
+              onTrelloSend={trelloConnected ? setTrelloSendEntry : undefined}
+            />
           </>
         ) : view === "tasks" ? (
           <>
@@ -233,11 +233,7 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Tarefas</h2>
             </header>
 
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="max-w-2xl mx-auto p-4 md:p-6">
-                <TasksView />
-              </div>
-            </ScrollArea>
+            <TasksView />
           </>
         ) : (
           <>

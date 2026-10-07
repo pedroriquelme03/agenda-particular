@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { format } from "date-fns";
+import { format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   CalendarPlus,
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OfflineBanner, useVisibleArea } from "@/components/pwa";
+import { NotificationsButton } from "@/components/notifications-button";
 import { useDictation } from "@/hooks/use-dictation";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -27,13 +28,18 @@ type CreateEntry = (
 type Screen = "home" | "note" | "appointment";
 
 interface PwaHomeProps {
+  entries: Entry[];
   createEntry: CreateEntry;
   onOpenLinks: () => void;
   onOpenTasks: () => void;
   nav: React.ReactNode;
 }
 
+const homeButton =
+  "flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl shadow-sm transition-transform active:scale-95";
+
 export function PwaHome({
+  entries,
   createEntry,
   onOpenLinks,
   onOpenTasks,
@@ -67,51 +73,103 @@ export function PwaHome({
     );
   }
 
+  const today = new Date();
+  const todayAppointments = entries
+    .filter(
+      (entry) =>
+        entry.is_reminder &&
+        !!entry.reminder_date &&
+        !entry.completed_at &&
+        isSameDay(new Date(entry.reminder_date), today)
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.reminder_date!).getTime() - new Date(b.reminder_date!).getTime()
+    );
+
   return (
     <div className="flex h-full w-full flex-col">
       <OfflineBanner />
-      <header className="px-5 pt-8 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Minha Agenda</h1>
-        <p className="text-sm text-muted-foreground capitalize">
-          {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
-        </p>
+      <header className="flex items-start justify-between gap-3 px-5 pt-8 pb-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight">Minha Agenda</h1>
+          <p className="text-sm text-muted-foreground capitalize">
+            {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
+          </p>
+        </div>
+        <NotificationsButton />
       </header>
 
-      <main className="flex flex-1 flex-col justify-end px-5 pb-5">
+      <section className="flex min-h-0 flex-1 flex-col px-5">
+        <h2 className="pb-2 text-sm font-semibold text-muted-foreground">
+          Compromissos de hoje
+        </h2>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {todayAppointments.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Nenhum compromisso hoje.
+            </p>
+          ) : (
+            <ul className="divide-y rounded-xl border">
+              {todayAppointments.map((entry) => (
+                <li key={entry.id} className="flex items-start gap-3 px-3 py-2.5">
+                  <span className="w-[5.5rem] shrink-0 text-sm font-semibold tabular-nums">
+                    {format(new Date(entry.reminder_date!), "HH:mm")}
+                    {entry.reminder_end_date &&
+                      ` – ${format(new Date(entry.reminder_end_date), "HH:mm")}`}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">
+                      {entry.title || "Compromisso"}
+                    </span>
+                    {entry.content && (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {entry.content}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <main className="px-5 pt-3 pb-5">
         {savedMessage && (
-          <p className="mb-4 text-center text-sm text-muted-foreground">
+          <p className="mb-3 text-center text-sm text-muted-foreground">
             {savedMessage}
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <button
             onClick={() => setScreen("note")}
-            className="flex aspect-square flex-col items-center justify-center gap-3 rounded-3xl bg-primary text-primary-foreground shadow-sm transition-transform active:scale-95"
+            className={cn(homeButton, "bg-primary text-primary-foreground")}
           >
-            <NotebookPen className="h-12 w-12" />
-            <span className="text-lg font-semibold">Anotação</span>
+            <NotebookPen className="h-9 w-9" />
+            <span className="text-base font-semibold">Anotação</span>
           </button>
           <button
             onClick={() => setScreen("appointment")}
-            className="flex aspect-square flex-col items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+            className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
           >
-            <CalendarPlus className="h-12 w-12" />
-            <span className="text-lg font-semibold">Compromisso</span>
+            <CalendarPlus className="h-9 w-9" />
+            <span className="text-base font-semibold">Compromisso</span>
           </button>
           <button
             onClick={onOpenLinks}
-            className="flex aspect-[2/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+            className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
           >
-            <Link2 className="h-7 w-7" />
-            <span className="text-lg font-semibold">Links</span>
+            <Link2 className="h-9 w-9" />
+            <span className="text-base font-semibold">Links</span>
           </button>
           <button
             onClick={onOpenTasks}
-            className="flex aspect-[2/1] items-center justify-center gap-3 rounded-3xl border bg-secondary text-secondary-foreground shadow-sm transition-transform active:scale-95"
+            className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
           >
-            <ListTodo className="h-7 w-7" />
-            <span className="text-lg font-semibold">Tarefas</span>
+            <ListTodo className="h-9 w-9" />
+            <span className="text-base font-semibold">Tarefas</span>
           </button>
         </div>
       </main>

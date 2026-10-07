@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { useTasks } from "@/hooks/use-tasks";
 import type { Task } from "@/lib/types";
@@ -56,23 +63,9 @@ export function TasksView() {
   };
 
   return (
-    <div className="space-y-4">
-      {formOpen ? (
-        <TaskForm
-          onCancel={() => setFormOpen(false)}
-          onSubmit={async (input) => {
-            const task = await createTask(input);
-            if (task) setFormOpen(false);
-            return !!task;
-          }}
-        />
-      ) : (
-        <Button onClick={() => setFormOpen(true)} className="h-12 w-full text-base">
-          <Plus className="h-4 w-4" />
-          Nova tarefa
-        </Button>
-      )}
-
+    <div className="flex min-h-0 flex-1 flex-col">
+      <ScrollArea className="min-h-0 flex-1">
+      <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
       <div className="flex">
         <Badge
           variant={showDone ? "default" : "outline"}
@@ -102,6 +95,34 @@ export function TasksView() {
           ))}
         </div>
       )}
+      </div>
+      </ScrollArea>
+
+      <div className="border-t px-4 py-3">
+        <Button
+          onClick={() => setFormOpen(true)}
+          className="mx-auto flex h-12 w-full max-w-2xl text-base"
+        >
+          <Plus className="h-4 w-4" />
+          Nova tarefa
+        </Button>
+      </div>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nova tarefa</DialogTitle>
+          </DialogHeader>
+          <TaskForm
+            onCancel={() => setFormOpen(false)}
+            onSubmit={async (input) => {
+              const task = await createTask(input);
+              if (task) setFormOpen(false);
+              return !!task;
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Toast
         toast={toast}
@@ -239,7 +260,7 @@ function TaskForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border p-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="task-title">Título</Label>
         <Input
