@@ -45,11 +45,14 @@ interface EntryCardProps {
 
 export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
   const Icon = typeIcons[entry.type];
+  const isDone = !!entry.completed_at;
   const isUpcoming =
+    !isDone &&
     entry.is_reminder &&
     entry.reminder_date &&
     isFuture(new Date(entry.reminder_date));
   const isOverdue =
+    !isDone &&
     entry.is_reminder &&
     entry.reminder_date &&
     isPast(new Date(entry.reminder_date));
@@ -131,6 +134,7 @@ export function EntryCard({ entry, onDelete, onTrelloSend }: EntryCardProps) {
             <Bell className="h-3.5 w-3.5" />
             {format(new Date(entry.reminder_date), "dd/MM/yyyy HH:mm")}
             {isOverdue && " (atrasado)"}
+            {isDone && " (concluído)"}
           </div>
         )}
 

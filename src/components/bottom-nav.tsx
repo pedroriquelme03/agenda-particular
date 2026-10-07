@@ -10,20 +10,37 @@ interface BottomNavProps {
   active: Page;
   onNavigate: (page: Page) => void;
   trelloConnected: boolean;
+  showHome: boolean;
+  className?: string;
 }
 
 const pages = [
   { value: "home" as const, label: "Início", icon: Home },
-  { value: "entries" as const, label: "Agenda", icon: LayoutDashboard },
+  { value: "entries" as const, label: "Anotações", icon: LayoutDashboard },
   { value: "calendar" as const, label: "Calendário", icon: CalendarDays },
   { value: "trello" as const, label: "Trello", icon: KanbanSquare },
 ];
 
-export function BottomNav({ active, onNavigate, trelloConnected }: BottomNavProps) {
+export function BottomNav({
+  active,
+  onNavigate,
+  trelloConnected,
+  showHome,
+  className,
+}: BottomNavProps) {
   return (
-    <nav className="flex shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className={cn(
+        "flex shrink-0 border-t bg-background pb-[env(safe-area-inset-bottom)]",
+        className
+      )}
+    >
       {pages
-        .filter(({ value }) => value !== "trello" || trelloConnected)
+        .filter(
+          ({ value }) =>
+            (value !== "trello" || trelloConnected) &&
+            (value !== "home" || showHome)
+        )
         .map(({ value, label, icon: Icon }) => (
           <button
             key={value}

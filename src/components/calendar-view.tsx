@@ -21,8 +21,6 @@ const categoryColors: Record<string, string> = {
   Link: "pink",
 };
 
-const categories = [APPOINTMENT, ...Object.values(typeCategories)];
-
 const HOUR_MS = 60 * 60 * 1000;
 
 // Appointments sit on their scheduled date; everything else on the day it was created.
@@ -44,6 +42,8 @@ function toEvent(entry: Entry): Event {
     category,
     tags: entry.tags,
     movable: isAppointment,
+    checkable: isAppointment,
+    done: !!entry.completed_at,
   };
 }
 
@@ -107,10 +107,14 @@ export function CalendarView({
   return (
     <EventManager
       events={events}
-      categories={categories}
       onEventCreate={handleCreate}
       onEventUpdate={handleUpdate}
       onEventDelete={deleteEntry}
+      onEventToggleDone={(id, done) =>
+        updateEntry(id, {
+          completed_at: done ? new Date().toISOString() : null,
+        })
+      }
     />
   );
 }

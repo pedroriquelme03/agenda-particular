@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Sidebar, type View } from "@/components/sidebar";
+import { Sidebar, filters, type View } from "@/components/sidebar";
 import { SearchBar } from "@/components/search-bar";
 import { EntryForm } from "@/components/entry-form";
 import { EntryCard } from "@/components/entry-card";
@@ -10,12 +10,14 @@ import { TrelloBoards } from "@/components/trello-boards";
 import { useEntries } from "@/hooks/use-entries";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineBanner, useStandalone } from "@/components/pwa";
-import { PwaHome } from "@/components/pwa-home";
+import { NoteScreen, PwaHome } from "@/components/pwa-home";
 import { BottomNav } from "@/components/bottom-nav";
 import { CalendarView } from "@/components/calendar-view";
-import { Menu } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { isConfigured } from "@/lib/trello";
 import type { Entry } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export default function Home() {
   const {
@@ -35,8 +37,8 @@ export default function Home() {
   const [trelloConfigOpen, setTrelloConfigOpen] = useState(false);
   const [trelloSendEntry, setTrelloSendEntry] = useState<Entry | null>(null);
   const [trelloConnected, setTrelloConnected] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const standalone = useStandalone();
+  const [noteOpen, setNoteOpen] = useState(false);
   const [showAgenda, setShowAgenda] = useState(false);
 
   useEffect(() => {
@@ -57,15 +59,19 @@ export default function Home() {
       entries.filter(
         (e) =>
           e.is_reminder &&
+          !e.completed_at &&
           e.reminder_date &&
           new Date(e.reminder_date) > new Date()
       ),
     [entries]
   );
 
-  const bottomNav = standalone ? (
+  // The installed app always has the bar; in a browser it replaces the sidebar on small screens.
+  const bottomNav = (
     <BottomNav
-      active={showAgenda ? view : "home"}
+      showHome={standalone}
+      className={standalone ? undefined : "md:hidden"}
+      active={standalone && !showAgenda ? "home" : view}
       onNavigate={(page) => {
         if (page === "home") {
           setShowAgenda(false);
@@ -76,7 +82,7 @@ export default function Home() {
       }}
       trelloConnected={trelloConnected}
     />
-  ) : null;
+  );
 
   if (standalone && !showAgenda) {
     return <PwaHome createEntry={createEntry} nav={bottomNav} />;
@@ -92,8 +98,6 @@ export default function Home() {
         onViewChange={changeView}
         onSettingsClick={() => setTrelloConfigOpen(true)}
         trelloConnected={trelloConnected}
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
       />
 
       <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
@@ -101,13 +105,6 @@ export default function Home() {
         {view === "entries" ? (
           <>
             <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3 md:gap-4">
-              <button
-                onClick={() => setMenuOpen(true)}
-                aria-label="Abrir menu"
-                className="md:hidden -ml-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
               <div className="flex-1">
                 <SearchBar value={search} onChange={setSearch} />
               </div>
@@ -116,14 +113,41 @@ export default function Home() {
                   {reminders.length} lembrete{reminders.length > 1 ? "s" : ""} pendente{reminders.length > 1 ? "s" : ""}
                 </span>
               )}
+              <button
+                onClick={() => setTrelloConfigOpen(true)}
+                aria-label="Config Trello"
+                className="md:hidden -mr-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <Settings className="h-5 w-5" />
+              </button>
             </header>
 
-            <ScrollArea className="flex-1">
+            <div className="md:hidden flex gap-2 overflow-x-auto border-b px-4 py-2">
+              {filters.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => setFilter(value)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+                    filter === value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <ScrollArea className="flex-1 min-h-0">
               <div className="max-w-2xl mx-auto p-4 md:p-6 space-y-4">
-                <EntryForm
-                  onCreated={() => refetch()}
-                  createEntry={createEntry}
-                />
+                <div className="hidden md:block">
+                  <EntryForm
+                    onCreated={() => refetch()}
+                    createEntry={createEntry}
+                  />
+                </div>
 
                 {loading ? (
                   <div className="text-center py-12 text-muted-foreground">
@@ -151,17 +175,20 @@ export default function Home() {
                 )}
               </div>
             </ScrollArea>
+
+            <div className="md:hidden border-t px-4 py-3">
+              <Button
+                onClick={() => setNoteOpen(true)}
+                className="h-12 w-full text-base"
+              >
+                <Plus className="h-4 w-4" />
+                Nova entrada
+              </Button>
+            </div>
           </>
         ) : view === "calendar" ? (
           <>
             <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
-              <button
-                onClick={() => setMenuOpen(true)}
-                aria-label="Abrir menu"
-                className="md:hidden -ml-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
               <h2 className="text-lg font-semibold">Calendário</h2>
             </header>
 
@@ -185,13 +212,6 @@ export default function Home() {
         ) : (
           <>
             <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
-              <button
-                onClick={() => setMenuOpen(true)}
-                aria-label="Abrir menu"
-                className="md:hidden -ml-1 p-2 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
               <h2 className="text-lg font-semibold">Quadros do Trello</h2>
             </header>
 
@@ -206,6 +226,14 @@ export default function Home() {
       </div>
 
       {bottomNav}
+
+      {noteOpen && (
+        <NoteScreen
+          createEntry={createEntry}
+          onCancel={() => setNoteOpen(false)}
+          onSaved={() => setNoteOpen(false)}
+        />
+      )}
 
       <TrelloConfigDialog
         open={trelloConfigOpen}

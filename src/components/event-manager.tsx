@@ -5,6 +5,7 @@ import { format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Calendar,
+  Check,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -40,6 +41,9 @@ export interface Event {
   tags?: string[];
   // Whether the date can be changed (dragging or editing).
   movable?: boolean;
+  // Whether it can be checked off as done, and whether it already was.
+  checkable?: boolean;
+  done?: boolean;
 }
 
 export interface EventDraft {
@@ -56,6 +60,7 @@ export interface EventManagerProps {
   onEventCreate?: (event: EventDraft) => void;
   onEventUpdate?: (id: string, event: Partial<Event>) => void;
   onEventDelete?: (id: string) => void;
+  onEventToggleDone?: (id: string, done: boolean) => void;
   categories?: string[];
   colors?: ColorClasses[];
   defaultView?: CalendarView;
@@ -94,6 +99,7 @@ export function EventManager({
   onEventCreate,
   onEventUpdate,
   onEventDelete,
+  onEventToggleDone,
   categories = [],
   colors = defaultColors,
   defaultView = "month",
@@ -106,11 +112,17 @@ export function EventManager({
   const [draggedEvent, setDraggedEvent] = useState<Event | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  // Day tapped in the month grid; its items are listed below the calendar.
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  // Off: only what is still to do. On: the history of what was checked off.
+  const [showDone, setShowDone] = useState(false);
 
   const isDialogOpen = newEvent !== null || selectedEvent !== null;
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
+      if (!!event.done !== showDone) return false;
+
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesSearch =
@@ -131,7 +143,7 @@ export function EventManager({
 
       return true;
     });
-  }, [events, searchQuery, selectedCategories]);
+  }, [events, searchQuery, selectedCategories, showDone]);
 
   const closeDialog = () => {
     setNewEvent(null);
@@ -308,6 +320,19 @@ export function EventManager({
           )}
         </div>
 
+        {onEventToggleDone && (
+          <div className="flex">
+            <Badge
+              variant={showDone ? "default" : "outline"}
+              className="cursor-pointer"
+              onClick={() => setShowDone((prev) => !prev)}
+            >
+              <Check className="h-3 w-3" />
+              Concluídos
+            </Badge>
+          </div>
+        )}
+
         {categories.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
             {categories.map((category) => {
@@ -333,13 +358,36 @@ export function EventManager({
         )}
       </div>
 
-      {view === "month" && <MonthView {...viewProps} onDrop={handleDrop} />}
+      {view === "month" && (
+        <>
+          <MonthView
+            {...viewProps}
+            onDrop={handleDrop}
+            selectedDay={selectedDay}
+            onDayClick={setSelectedDay}
+          />
+          {selectedDay && (
+            <ListView
+              events={filteredEvents.filter((event) =>
+                isSameDay(event.startTime, selectedDay)
+              )}
+              onEventClick={setSelectedEvent}
+              onToggleDone={onEventToggleDone}
+              getColorClasses={getColorClasses}
+              heading={selectedDay}
+              emptyText="Nada registrado neste dia"
+              ascending
+            />
+          )}
+        </>
+      )}
       {view === "week" && <WeekView {...viewProps} onDrop={handleDrop} />}
       {view === "day" && <DayView {...viewProps} onDrop={handleDrop} />}
       {view === "list" && (
         <ListView
           events={filteredEvents}
           onEventClick={setSelectedEvent}
+          onToggleDone={onEventToggleDone}
           getColorClasses={getColorClasses}
         />
       )}
@@ -351,7 +399,7 @@ export function EventManager({
           if (!open) closeDialog();
         }}
       >
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {newEvent ? "Novo compromisso" : "Detalhes"}
@@ -544,8 +592,14 @@ function MonthView({
   currentDate,
   events,
   onDrop,
+  selectedDay,
+  onDayClick,
   ...cardProps
-}: ViewProps & { onDrop: (date: Date) => void }) {
+}: ViewProps & {
+  onDrop: (date: Date) => void;
+  selectedDay: Date | null;
+  onDayClick: (date: Date) => void;
+}) {
   const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   startDate.setDate(startDate.getDate() - startDate.getDay());
 
@@ -580,9 +634,11 @@ function MonthView({
             <div
               key={day.toISOString()}
               className={cn(
-                "min-h-20 min-w-0 border-b border-r p-1 transition-colors hover:bg-accent/50 nth-[7n]:border-r-0 sm:min-h-24 sm:p-2",
-                !isCurrentMonth && "bg-muted/30"
+                "min-h-20 min-w-0 cursor-pointer border-b border-r p-1 transition-colors hover:bg-accent/50 nth-[7n]:border-r-0 sm:min-h-24 sm:p-2",
+                !isCurrentMonth && "bg-muted/30",
+                selectedDay && isSameDay(day, selectedDay) && "bg-accent"
               )}
+              onClick={() => onDayClick(day)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => onDrop(day)}
             >
@@ -735,11 +791,24 @@ function ListView({
   events,
   onEventClick,
   getColorClasses,
-}: Pick<ViewProps, "events" | "onEventClick" | "getColorClasses">) {
-  // Newest first, grouped by day.
+  onToggleDone,
+  heading,
+  emptyText = "Nada encontrado",
+  ascending = false,
+}: Pick<ViewProps, "events" | "onEventClick" | "getColorClasses"> & {
+  onToggleDone?: (id: string, done: boolean) => void;
+  // Shown as the title when the list is for a single day, even if it is empty.
+  heading?: Date;
+  emptyText?: string;
+  ascending?: boolean;
+}) {
+  // Grouped by day; newest first unless `ascending`.
   const groups: { date: Date; events: Event[] }[] = [];
   [...events]
-    .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+    .sort(
+      (a, b) =>
+        (a.startTime.getTime() - b.startTime.getTime()) * (ascending ? 1 : -1)
+    )
     .forEach((event) => {
       const last = groups[groups.length - 1];
       if (last && isSameDay(last.date, event.startTime)) {
@@ -752,6 +821,11 @@ function ListView({
   return (
     <div className="rounded-xl border bg-card p-3 sm:p-4">
       <div className="space-y-6">
+        {heading && events.length === 0 && (
+          <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
+            {format(heading, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+          </h3>
+        )}
         {groups.map((group) => (
           <div key={group.date.toISOString()} className="space-y-3">
             <h3 className="text-xs font-semibold capitalize text-muted-foreground sm:text-sm">
@@ -765,15 +839,40 @@ function ListView({
                   className="cursor-pointer rounded-lg border bg-card p-3 transition-shadow hover:shadow-md sm:p-4"
                 >
                   <div className="flex items-start gap-2 sm:gap-3">
-                    <div
-                      className={cn(
-                        "mt-1 h-2.5 w-2.5 shrink-0 rounded-full sm:h-3 sm:w-3",
-                        getColorClasses(event.color).bg
-                      )}
-                    />
+                    {event.checkable && onToggleDone ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleDone(event.id, !event.done);
+                        }}
+                        aria-label={
+                          event.done ? "Desmarcar como feito" : "Marcar como feito"
+                        }
+                        className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                          event.done
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-muted-foreground/50"
+                        )}
+                      >
+                        {event.done && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                    ) : (
+                      <div
+                        className={cn(
+                          "mt-1 h-2.5 w-2.5 shrink-0 rounded-full sm:h-3 sm:w-3",
+                          getColorClasses(event.color).bg
+                        )}
+                      />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="truncate text-sm font-semibold sm:text-base">
+                        <h4
+                          className={cn(
+                            "truncate text-sm font-semibold sm:text-base",
+                            event.done && "text-muted-foreground line-through"
+                          )}
+                        >
                           {event.title}
                         </h4>
                         {event.category && (
@@ -792,7 +891,13 @@ function ListView({
                           <Clock className="h-3 w-3" />
                           {formatTime(event.startTime)}
                         </span>
-                        {event.tags?.map((tag) => (
+                        {event.tags
+                          ?.filter(
+                            // The category badge already says it.
+                            (tag) =>
+                              tag.toLowerCase() !== event.category?.toLowerCase()
+                          )
+                          .map((tag) => (
                           <Badge key={tag} variant="outline" className="text-[10px]">
                             {tag}
                           </Badge>
@@ -806,8 +911,13 @@ function ListView({
           </div>
         ))}
         {events.length === 0 && (
-          <div className="py-12 text-center text-sm text-muted-foreground sm:text-base">
-            Nada encontrado
+          <div
+            className={cn(
+              "text-center text-sm text-muted-foreground sm:text-base",
+              heading ? "py-4" : "py-12"
+            )}
+          >
+            {emptyText}
           </div>
         )}
       </div>

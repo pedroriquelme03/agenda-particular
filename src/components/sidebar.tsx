@@ -24,11 +24,9 @@ interface SidebarProps {
   onViewChange: (view: View) => void;
   onSettingsClick: () => void;
   trelloConnected: boolean;
-  open: boolean;
-  onClose: () => void;
 }
 
-const filters = [
+export const filters = [
   { value: "all" as const, label: "Tudo", icon: LayoutDashboard },
   { value: "text" as const, label: "Textos", icon: FileText },
   { value: "voice" as const, label: "Voz", icon: Mic },
@@ -43,23 +41,10 @@ export function Sidebar({
   onViewChange,
   onSettingsClick,
   trelloConnected,
-  open,
-  onClose,
 }: SidebarProps) {
+  // Desktop only: small screens use the bottom bar and the filter chips instead.
   return (
-    <>
-    {open && (
-      <div
-        className="fixed inset-0 z-30 bg-black/40 md:hidden"
-        onClick={onClose}
-      />
-    )}
-    <aside
-      className={cn(
-        "fixed inset-y-0 left-0 z-40 w-60 border-r bg-background flex flex-col h-full transition-transform md:static md:translate-x-0 md:bg-muted/30",
-        open ? "translate-x-0" : "-translate-x-full"
-      )}
-    >
+    <aside className="hidden md:flex w-60 border-r bg-muted/30 flex-col h-full">
       <div className="p-4 border-b">
         <h1 className="text-lg font-bold tracking-tight">Minha Agenda</h1>
       </div>
@@ -71,7 +56,6 @@ export function Sidebar({
             onClick={() => {
               onViewChange("entries");
               onFilterChange(value);
-              onClose();
             }}
             className={cn(
               "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
@@ -89,7 +73,6 @@ export function Sidebar({
         <button
           onClick={() => {
             onViewChange("calendar");
-            onClose();
           }}
           className={cn(
             "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
@@ -107,7 +90,6 @@ export function Sidebar({
             <button
               onClick={() => {
                 onViewChange("trello");
-                onClose();
               }}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
@@ -128,7 +110,6 @@ export function Sidebar({
         <button
           onClick={() => {
             onSettingsClick();
-            onClose();
           }}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
         >
@@ -137,6 +118,5 @@ export function Sidebar({
         </button>
       </div>
     </aside>
-    </>
   );
 }

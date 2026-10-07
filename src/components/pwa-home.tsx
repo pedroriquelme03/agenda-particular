@@ -98,7 +98,7 @@ interface ScreenProps {
   onSaved: () => void;
 }
 
-function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
+export function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -137,7 +137,7 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
 
   return (
     <div
-      className="fixed inset-x-0 top-0 flex h-full flex-col bg-background"
+      className="fixed inset-x-0 top-0 z-50 flex h-full flex-col bg-background"
       style={
         visibleArea.height
           ? { height: visibleArea.height, top: visibleArea.top }
@@ -147,7 +147,7 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
       <header className="flex items-center justify-between px-2 pt-3 pb-1">
         <button
           onClick={onCancel}
-          className="flex items-center gap-0.5 px-2 py-2 text-base text-amber-600"
+          className="flex items-center gap-0.5 px-2 py-2 text-base text-foreground"
         >
           <ChevronLeft className="h-5 w-5" />
           Voltar
@@ -160,7 +160,7 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
             dictation.isListening ||
             dictation.isTranscribing
           }
-          className="px-3 py-2 text-base font-semibold text-amber-600 disabled:opacity-40"
+          className="px-3 py-2 text-base font-semibold text-foreground disabled:opacity-40"
         >
           {saving ? "Salvando..." : "Salvar"}
         </button>
@@ -188,8 +188,8 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
           className={cn(
             "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40",
             dictation.isListening
-              ? "bg-destructive text-white animate-pulse"
-              : "bg-muted text-amber-600"
+              ? "bg-foreground text-background animate-pulse"
+              : "bg-muted text-foreground"
           )}
         >
           {dictation.isListening ? (

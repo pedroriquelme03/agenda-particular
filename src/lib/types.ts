@@ -11,6 +11,8 @@ export interface Entry {
   trello_card_id: string | null;
   is_reminder: boolean;
   reminder_date: string | null;
+  // Set when an appointment is checked off as done.
+  completed_at?: string | null;
   tags: string[];
   created_at: string;
   updated_at: string;

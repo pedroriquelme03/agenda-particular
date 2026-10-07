@@ -10,6 +10,7 @@ create table if not exists entries (
   is_reminder boolean not null default false,
   reminder_date timestamptz,
   tags text[] not null default '{}',
+  completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
