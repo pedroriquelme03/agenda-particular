@@ -25,16 +25,18 @@ export function useFinance() {
     fetchItems();
   }, [fetchItems]);
 
-  // `month` is the first day of the month, "yyyy-MM-01".
+  // Months are the first day of the month, "yyyy-MM-01". `endMonth` is the
+  // first month a fixed account no longer applies to; null means no end.
   const addItem = async (
     kind: FinanceKind,
     name: string,
     amount: number,
-    month: string
+    month: string,
+    endMonth: string | null = null
   ) => {
     const { data, error } = await supabase
       .from("finance_items")
-      .insert({ kind, name, amount, month })
+      .insert({ kind, name, amount, month, end_month: endMonth })
       .select()
       .single();
     if (error) {
@@ -55,8 +57,9 @@ export function useFinance() {
     return true;
   };
 
-  // Stops a fixed account from `month` on, keeping it in the earlier months.
-  const endItem = async (id: string, month: string) => {
+  // Sets the first month a fixed account no longer applies to, keeping it in
+  // the earlier months. Null makes it run with no end again.
+  const endItem = async (id: string, month: string | null) => {
     const { error } = await supabase
       .from("finance_items")
       .update({ end_month: month })

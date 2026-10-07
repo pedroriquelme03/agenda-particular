@@ -32,6 +32,13 @@ function parseAmount(input: string) {
 // Months are compared as "yyyy-MM-01" strings, which sort like dates.
 const monthKey = (date: Date) => format(startOfMonth(date), "yyyy-MM-dd");
 
+// The database keeps the first month a fixed account no longer applies to; the
+// screen talks about the last month it does. These convert between the two.
+const lastMonthOf = (endMonth: string) =>
+  format(addMonths(new Date(endMonth + "T00:00"), -1), "yyyy-MM");
+const endMonthAfter = (lastMonth: string) =>
+  monthKey(addMonths(new Date(lastMonth + "-01T00:00"), 1));
+
 // A fixed account counts from its first month until it is ended; a sale only
 // in its own month.
 function appliesTo(item: FinanceItem, month: string) {
@@ -60,8 +67,26 @@ export function FinanceView() {
   const salesTotal = total(sales);
   const cash = fixedBalance + salesTotal;
 
-  const add = async (kind: FinanceKind, name: string, amount: number) =>
-    !!(await addItem(kind, name, amount, month));
+  const add = async (
+    kind: FinanceKind,
+    name: string,
+    amount: number,
+    lastMonth: string | null
+  ) =>
+    !!(await addItem(
+      kind,
+      name,
+      amount,
+      month,
+      lastMonth ? endMonthAfter(lastMonth) : null
+    ));
+
+  // Changes until which month a fixed account runs; empty means no end.
+  const setLastMonth = (item: FinanceItem, lastMonth: string) => {
+    // It has to cover at least its own first month.
+    if (lastMonth && lastMonth < item.month.slice(0, 7)) return;
+    endItem(item.id, lastMonth ? endMonthAfter(lastMonth) : null);
+  };
 
   // A fixed account that started in an earlier month is only stopped from this
   // month on, so the months already closed keep their numbers.
@@ -123,7 +148,11 @@ export function FinanceView() {
                 title="Contas fixas a receber"
                 items={fixedIncome}
                 namePlaceholder="Ex.: Mensalidade do cliente"
-                onAdd={(name, amount) => add("fixed_income", name, amount)}
+                fixedFrom={month}
+                onAdd={(name, amount, lastMonth) =>
+                  add("fixed_income", name, amount, lastMonth)
+                }
+                onSetLastMonth={setLastMonth}
                 onRemove={setDeleteTarget}
               />
 
@@ -131,7 +160,11 @@ export function FinanceView() {
                 title="Contas fixas a pagar"
                 items={fixedExpense}
                 namePlaceholder="Ex.: Aluguel"
-                onAdd={(name, amount) => add("fixed_expense", name, amount)}
+                fixedFrom={month}
+                onAdd={(name, amount, lastMonth) =>
+                  add("fixed_expense", name, amount, lastMonth)
+                }
+                onSetLastMonth={setLastMonth}
                 onRemove={setDeleteTarget}
               />
 
@@ -151,7 +184,7 @@ export function FinanceView() {
                 title="Vendas"
                 items={sales}
                 namePlaceholder="Ex.: Site para cliente"
-                onAdd={(name, amount) => add("sale", name, amount)}
+                onAdd={(name, amount) => add("sale", name, amount, null)}
                 onRemove={setDeleteTarget}
               />
             </>
@@ -187,17 +220,25 @@ function Section({
   title,
   items,
   namePlaceholder,
+  fixedFrom,
   onAdd,
+  onSetLastMonth,
   onRemove,
 }: {
   title: string;
   items: FinanceItem[];
   namePlaceholder: string;
-  onAdd: (name: string, amount: number) => Promise<boolean>;
+  // Given for the fixed-account lists: the month on screen ("yyyy-MM-01").
+  // Enables choosing until which month an account runs.
+  fixedFrom?: string;
+  onAdd: (name: string, amount: number, lastMonth: string | null) => Promise<boolean>;
+  onSetLastMonth?: (item: FinanceItem, lastMonth: string) => void;
   onRemove: (item: FinanceItem) => void;
 }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
+  // Last month the new fixed account runs, "yyyy-MM"; empty = no end.
+  const [lastMonth, setLastMonth] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
@@ -210,11 +251,12 @@ function Section({
     if (!canAdd || parsedAmount === null) return;
     setSaving(true);
     setSaveError(false);
-    const saved = await onAdd(name.trim(), parsedAmount);
+    const saved = await onAdd(name.trim(), parsedAmount, lastMonth || null);
     setSaving(false);
     if (saved) {
       setName("");
       setAmount("");
+      setLastMonth("");
     } else {
       setSaveError(true);
     }
@@ -233,7 +275,31 @@ function Section({
         <ul className="divide-y">
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-2 py-1.5 pr-2 pl-4">
-              <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm">{item.name}</span>
+                {onSetLastMonth && (
+                  // The month picker sits invisibly over the label.
+                  <span className="relative inline-block text-xs text-muted-foreground underline underline-offset-2">
+                    {item.end_month
+                      ? "até " +
+                        format(
+                          new Date(lastMonthOf(item.end_month) + "-01T00:00"),
+                          "MMM/yyyy",
+                          { locale: ptBR }
+                        )
+                      : "sem data final"}
+                    <input
+                      type="month"
+                      aria-label={`Até que mês vale ${item.name}`}
+                      min={item.month.slice(0, 7)}
+                      value={item.end_month ? lastMonthOf(item.end_month) : ""}
+                      onChange={(e) => onSetLastMonth(item, e.target.value)}
+                      onClick={(e) => e.currentTarget.showPicker?.()}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                  </span>
+                )}
+              </span>
               <span className="shrink-0 text-sm tabular-nums">
                 {currency.format(Number(item.amount))}
               </span>
@@ -281,6 +347,18 @@ function Section({
             <Plus className="h-4 w-4" />
           </Button>
         </div>
+        {fixedFrom && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="shrink-0">Até (opcional)</span>
+            <Input
+              type="month"
+              min={fixedFrom.slice(0, 7)}
+              value={lastMonth}
+              onChange={(e) => setLastMonth(e.target.value)}
+              className="block h-10 min-w-0 flex-1 appearance-none text-base"
+            />
+          </label>
+        )}
         {amountInvalid && (
           <p className="text-sm text-destructive">Digite um valor maior que zero.</p>
         )}
