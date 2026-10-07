@@ -14,8 +14,8 @@ create index if not exists idx_entries_user on public.entries (user_id);
 create index if not exists idx_tasks_user on public.tasks (user_id);
 create index if not exists idx_push_subscriptions_user on public.push_subscriptions (user_id);
 
--- Rows created before there were accounts have no owner. The first account to
--- sign up takes them; after that no ownerless rows exist, so this does nothing.
+-- Rows created before there were accounts have no owner. They belong to the
+-- owner's account and are handed over when it signs up, and to no one else.
 create or replace function public.claim_ownerless_rows()
 returns trigger
 language plpgsql
@@ -23,9 +23,11 @@ security definer
 set search_path = ''
 as $$
 begin
-  update public.entries set user_id = new.id where user_id is null;
-  update public.tasks set user_id = new.id where user_id is null;
-  update public.push_subscriptions set user_id = new.id where user_id is null;
+  if lower(new.email) = 'admin@pedroriquelme.com.br' then
+    update public.entries set user_id = new.id where user_id is null;
+    update public.tasks set user_id = new.id where user_id is null;
+    update public.push_subscriptions set user_id = new.id where user_id is null;
+  end if;
   return new;
 end;
 $$;
