@@ -10,139 +10,114 @@ import {
 
 const noopSubscribe = () => () => {};
 
-// A session that ends sooner than this without hearing anything means the
-// device is refusing to listen; restarting it would spin forever.
-const MIN_SESSION_MS = 1000;
-const RESTART_DELAY_MS = 250;
+// Low bitrate is plenty for speech and keeps the upload small.
+const AUDIO_BITS_PER_SECOND = 32000;
+const MAX_RECORDING_MS = 5 * 60 * 1000;
 
-function hasSpeechRecognition() {
-  return "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+function canRecord() {
+  return "MediaRecorder" in window && !!navigator.mediaDevices?.getUserMedia;
 }
 
-// Speech-to-text only (no audio file). `onFinal` receives each finished phrase.
-export function useDictation(onFinal: (text: string) => void) {
+// Records the microphone and sends the audio to /api/transcribe. The browser's own
+// speech recognition is not used because it returns nothing in an installed iOS app.
+// `onText` receives the transcribed text when a recording finishes.
+export function useDictation(onText: (text: string) => void) {
   const [isListening, setIsListening] = useState(false);
-  const [interim, setInterim] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const wantedRef = useRef(false);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onFinalRef = useRef(onFinal);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discardRef = useRef(false);
+  const onTextRef = useRef(onText);
 
   useEffect(() => {
-    onFinalRef.current = onFinal;
-  }, [onFinal]);
+    onTextRef.current = onText;
+  }, [onText]);
 
   const isSupported = useSyncExternalStore(
     noopSubscribe,
-    hasSpeechRecognition,
+    canRecord,
     () => false
   );
 
-  const stop = useCallback(() => {
-    wantedRef.current = false;
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-      setIsListening(false);
-    }
-    recognitionRef.current?.stop();
-  }, []);
-
-  const start = useCallback(() => {
-    if (!hasSpeechRecognition() || wantedRef.current) return;
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    // Android Chrome repeats phrases in continuous mode, so each session takes
-    // one phrase and `onend` starts the next while the user keeps dictating.
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "pt-BR";
-
-    let startedAt = 0;
-    let heardSomething = false;
-
-    const begin = () => {
-      startedAt = Date.now();
-      heardSomething = false;
-      recognition.start();
-    };
-
-    recognition.onresult = (event) => {
-      heardSomething = true;
-      let interimText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          const text = result[0].transcript.trim();
-          if (text) onFinalRef.current(text);
-        } else {
-          interimText += result[0].transcript;
-        }
-      }
-      setInterim(interimText);
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === "no-speech") return;
-      wantedRef.current = false;
-      if (event.error === "aborted") return;
-      console.error("Speech recognition error:", event.error);
-      setError(
-        event.error === "not-allowed" || event.error === "service-not-allowed"
-          ? "Permita o uso do microfone para ditar."
-          : "Não foi possível transcrever o áudio."
-      );
-    };
-
-    recognition.onend = () => {
-      setInterim("");
-      if (wantedRef.current) {
-        if (!heardSomething && Date.now() - startedAt < MIN_SESSION_MS) {
-          wantedRef.current = false;
-          setError("Ditado por voz não disponível neste aparelho.");
-        } else {
-          restartTimerRef.current = setTimeout(() => {
-            restartTimerRef.current = null;
-            if (!wantedRef.current) {
-              setIsListening(false);
-              return;
-            }
-            try {
-              begin();
-            } catch {
-              wantedRef.current = false;
-              setIsListening(false);
-            }
-          }, RESTART_DELAY_MS);
-          return;
-        }
-      }
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    wantedRef.current = true;
-    setError(null);
+  const transcribe = useCallback(async (audio: Blob) => {
+    setIsTranscribing(true);
     try {
-      begin();
-      setIsListening(true);
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": audio.type || "audio/webm" },
+        body: audio,
+      });
+      const data = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok) {
+        setError(data.error || "Não foi possível transcrever o áudio.");
+      } else if (data.text) {
+        onTextRef.current(data.text);
+      } else {
+        setError("Não entendi o áudio. Tente de novo.");
+      }
     } catch {
-      wantedRef.current = false;
-      setError("Não foi possível iniciar o microfone.");
+      setError("Sem conexão para transcrever o áudio.");
+    } finally {
+      setIsTranscribing(false);
     }
   }, []);
+
+  const stop = useCallback(() => {
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+    if (recorderRef.current?.state === "recording") {
+      recorderRef.current.stop();
+    }
+  }, []);
+
+  const start = useCallback(async () => {
+    if (!canRecord() || recorderRef.current?.state === "recording") return;
+    setError(null);
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Permita o uso do microfone para ditar.");
+      return;
+    }
+
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(stream, {
+      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+    });
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+
+    recorder.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop());
+      setIsListening(false);
+      if (discardRef.current) return;
+      const audio = new Blob(chunks, { type: recorder.mimeType });
+      if (audio.size > 0) transcribe(audio);
+    };
+
+    discardRef.current = false;
+    recorderRef.current = recorder;
+    recorder.start();
+    setIsListening(true);
+    stopTimerRef.current = setTimeout(stop, MAX_RECORDING_MS);
+  }, [stop, transcribe]);
 
   useEffect(() => {
     return () => {
-      wantedRef.current = false;
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      recognitionRef.current?.abort();
+      // Leaving the screen: release the microphone and drop the recording.
+      discardRef.current = true;
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
     };
   }, []);
 
-  return { isSupported, isListening, interim, error, start, stop };
+  return { isSupported, isListening, isTranscribing, error, start, stop };
 }

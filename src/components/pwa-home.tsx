@@ -116,7 +116,6 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
 
   const handleSave = async () => {
     if (!content.trim()) return;
-    dictation.stop();
     setSaving(true);
     setSaveError(false);
     const entry = await createEntry({
@@ -155,7 +154,12 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
         </button>
         <button
           onClick={handleSave}
-          disabled={saving || !content.trim()}
+          disabled={
+            saving ||
+            !content.trim() ||
+            dictation.isListening ||
+            dictation.isTranscribing
+          }
           className="px-3 py-2 text-base font-semibold text-amber-600 disabled:opacity-40"
         >
           {saving ? "Salvando..." : "Salvar"}
@@ -179,7 +183,7 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
           // Keeps focus in the note so the keyboard does not close on tap.
           onMouseDown={(e) => e.preventDefault()}
           onClick={dictation.isListening ? dictation.stop : dictation.start}
-          disabled={!dictation.isSupported}
+          disabled={!dictation.isSupported || dictation.isTranscribing}
           aria-label={dictation.isListening ? "Parar gravação" : "Gravar áudio"}
           className={cn(
             "flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40",
@@ -194,16 +198,16 @@ function NoteScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
             <Mic className="h-6 w-6" />
           )}
         </button>
-        <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
           {saveError
             ? "Não foi possível salvar. Tente de novo."
             : !dictation.isSupported
               ? "Ditado por voz não disponível neste aparelho."
-              : dictation.error
-                ? dictation.error
-                : dictation.isListening
-                  ? dictation.interim || "Ouvindo..."
-                  : ""}
+              : dictation.isListening
+                ? "Gravando... toque para parar e transcrever."
+                : dictation.isTranscribing
+                  ? "Transcrevendo..."
+                  : (dictation.error ?? "")}
         </p>
       </footer>
     </div>
@@ -217,6 +221,8 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+
+  const visibleArea = useVisibleArea();
 
   const canSave = title.trim() && date && time && !saving;
 
@@ -243,7 +249,14 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
+    <div
+      className="fixed inset-x-0 top-0 flex h-full flex-col bg-background"
+      style={
+        visibleArea.height
+          ? { height: visibleArea.height, top: visibleArea.top }
+          : undefined
+      }
+    >
       <header className="flex items-center gap-1 border-b px-2 py-3">
         <button
           onClick={onCancel}
@@ -271,7 +284,7 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="appointment-date">Data</Label>
             <Input
@@ -279,7 +292,7 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="h-12 text-base"
+              className="block h-12 appearance-none text-base"
             />
           </div>
           <div className="space-y-2">
@@ -289,7 +302,7 @@ function AppointmentScreen({ createEntry, onCancel, onSaved }: ScreenProps) {
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="h-12 text-base"
+              className="block h-12 appearance-none text-base"
             />
           </div>
         </div>
