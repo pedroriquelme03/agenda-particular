@@ -50,11 +50,19 @@ interface CronData {
     due_date: string;
     due_time: string | null;
   }[];
+  meetings?: {
+    id: string;
+    user_id: string;
+    title: string;
+    meeting_date: string;
+    meeting_time: string | null;
+    mode: "online" | "in_person";
+  }[];
   subscriptions: (StoredSubscription & { user_id: string })[];
 }
 
 interface DueItem {
-  type: "entry" | "task";
+  type: "entry" | "task" | "meeting";
   id: string;
   userId: string;
   kind: "24h" | "1h";
@@ -96,7 +104,7 @@ export async function GET() {
     console.error("Error loading reminders:", error);
     return Response.json({ error: "Falha ao carregar avisos." }, { status: 500 });
   }
-  const { entries, tasks, subscriptions } = data as CronData;
+  const { entries, tasks, meetings = [], subscriptions } = data as CronData;
 
   const due: DueItem[] = [];
 
@@ -128,6 +136,24 @@ export async function GET() {
         targetAt: start,
         title: `Tarefa vence ${label}`,
         body: `${task.title} — prazo ${(task.due_time ? dateTimeFormat : dateFormat).format(start)}`,
+      });
+    }
+  }
+
+  // Like a task deadline: a meeting without a time counts as TASK_DUE_TIME.
+  for (const meeting of meetings) {
+    const start = new Date(
+      `${meeting.meeting_date}T${meeting.meeting_time || TASK_DUE_TIME}${UTC_OFFSET}`
+    );
+    for (const { kind, label } of dueKinds(start, now)) {
+      due.push({
+        type: "meeting",
+        id: meeting.id,
+        userId: meeting.user_id,
+        kind,
+        targetAt: start,
+        title: `Reunião ${label}`,
+        body: `${meeting.title} — ${(meeting.meeting_time ? dateTimeFormat : dateFormat).format(start)} · ${meeting.mode === "online" ? "online" : "presencial"}`,
       });
     }
   }

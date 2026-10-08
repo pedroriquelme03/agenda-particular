@@ -431,3 +431,11 @@ alter table public.ideas add column if not exists steps jsonb not null default '
 -- done when completed_at is set, as everywhere else.
 alter table public.tasks add column if not exists status text not null default 'todo'
   check (status in ('todo', 'doing'));
+
+-- Meetings send reminders too: push_sent accepts them, and push_cron_data
+-- (defined above) also returns, under 'meetings', the meetings that are neither
+-- done nor archived with meeting_date between p_date_from and p_date_to
+-- (id, user_id, title, meeting_date, meeting_time, mode).
+alter table public.push_sent drop constraint if exists push_sent_item_type_check;
+alter table public.push_sent add constraint push_sent_item_type_check
+  check (item_type in ('entry', 'task', 'meeting'));
