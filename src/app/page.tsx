@@ -21,6 +21,7 @@ import { IdeasView } from "@/components/ideas-view";
 import { FinanceView } from "@/components/finance-view";
 import { HouseView } from "@/components/house-view";
 import { MeetingsView } from "@/components/meetings-view";
+import { KanbanView } from "@/components/kanban-view";
 import { ContentView } from "@/components/content-view";
 import { useMeetings } from "@/hooks/use-meetings";
 import { ProfileDialog } from "@/components/profile-dialog";
@@ -473,6 +474,18 @@ function AgendaApp({
             </header>
 
             <TasksView {...tasksState} categories={categoriesState} />
+          </>
+        ) : view === "kanban" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Kanban</h2>
+            </header>
+
+            <KanbanView
+              tasks={tasksState.tasks}
+              loading={tasksState.loading}
+              updateTask={tasksState.updateTask}
+            />
           </>
         ) : view === "meetings" ? (
           <>

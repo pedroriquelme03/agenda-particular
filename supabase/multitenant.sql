@@ -426,3 +426,8 @@ grant select, insert, update, delete on public.content_items to authenticated;
 -- The steps to reach an idea's goal: [{ "id": "...", "text": "...", "done": false }].
 -- The idea's progress is the share of steps done.
 alter table public.ideas add column if not exists steps jsonb not null default '[]'::jsonb;
+
+-- Where a task sits on the Kanban board. "Done" is not stored here: a task is
+-- done when completed_at is set, as everywhere else.
+alter table public.tasks add column if not exists status text not null default 'todo'
+  check (status in ('todo', 'doing'));

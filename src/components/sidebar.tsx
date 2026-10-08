@@ -18,6 +18,7 @@ import {
   UserRound,
   Users,
   Clapperboard,
+  Columns3,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ export type View =
   | "calendar"
   | "links"
   | "tasks"
+  | "kanban"
   | "meetings"
   | "content"
   | "ideas"
@@ -49,6 +51,7 @@ const pages = [
   { value: "entries" as const, label: "Anotações", icon: LayoutDashboard },
   { value: "calendar" as const, label: "Calendário", icon: CalendarDays },
   { value: "tasks" as const, label: "Tarefas", icon: ListTodo },
+  { value: "kanban" as const, label: "Kanban", icon: Columns3 },
   { value: "meetings" as const, label: "Reuniões", icon: Users },
   { value: "links" as const, label: "Links", icon: Link2 },
   { value: "ideas" as const, label: "Ideias", icon: Lightbulb },

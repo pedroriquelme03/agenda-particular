@@ -148,6 +148,8 @@ export interface Task {
   category_id?: string | null;
   // Steps of the task, ticked off one by one.
   checklist?: ChecklistItem[];
+  // Kanban column while not done ("done" is completed_at being set).
+  status?: "todo" | "doing";
   archived_at?: string | null;
   completed_at: string | null;
   created_at: string;
