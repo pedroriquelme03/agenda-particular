@@ -470,27 +470,34 @@ function MeetingScreen({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-        <div className="space-y-2">
-          <Label htmlFor="meeting-notes">Anotações</Label>
-          <textarea
-            id="meeting-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => {
-              if (dirty) onSave({ notes });
-            }}
-            placeholder="Escreva aqui durante a reunião"
-            rows={10}
-            className="w-full resize-none rounded-lg border bg-transparent p-3 text-base leading-relaxed outline-none placeholder:text-muted-foreground/60"
-          />
-        </div>
+      {/* The whole screen is the notes field. */}
+      <textarea
+        aria-label="Anotações da reunião"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={() => {
+          if (dirty) onSave({ notes });
+        }}
+        placeholder="Escreva aqui durante a reunião"
+        className="min-h-0 w-full flex-1 resize-none bg-transparent px-5 py-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground/60"
+      />
 
+      {meeting.summary && (
+        <div className="max-h-[40%] shrink-0 space-y-2 overflow-y-auto border-t px-5 py-3">
+          <Label>Resumo</Label>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed">
+            {meeting.summary}
+          </p>
+        </div>
+      )}
+
+      <footer className="shrink-0 space-y-2 border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {message && <p className="text-sm text-destructive">{message}</p>}
         <Button
           type="button"
           onClick={summarize}
           disabled={!notes.trim() || summarizing}
-          className="h-12 w-full text-base"
+          className="mx-auto flex h-12 w-full max-w-2xl text-base"
         >
           <Sparkles className="h-4 w-4" />
           {summarizing
@@ -499,18 +506,7 @@ function MeetingScreen({
               ? "Gerar resumo de novo"
               : "Gerar resumo e próximos passos"}
         </Button>
-
-        {message && <p className="text-sm text-destructive">{message}</p>}
-
-        {meeting.summary && (
-          <div className="space-y-2">
-            <Label>Resumo</Label>
-            <p className="whitespace-pre-wrap rounded-lg border bg-muted/40 p-3 text-sm leading-relaxed">
-              {meeting.summary}
-            </p>
-          </div>
-        )}
-      </div>
+      </footer>
     </div>
   );
 }
