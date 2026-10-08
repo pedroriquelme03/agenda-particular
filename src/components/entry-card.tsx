@@ -155,8 +155,8 @@ export function EntryCard({
               size="icon"
               className="h-7 w-7"
               onClick={() => onEdit(entry)}
-              title={entry.type === "link" ? "Anotação do link" : "Editar"}
-              aria-label={entry.type === "link" ? "Anotação do link" : "Editar"}
+              title="Editar"
+              aria-label="Editar"
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>

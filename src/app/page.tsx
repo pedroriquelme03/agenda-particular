@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Sidebar, type View } from "@/components/sidebar";
+import { MobileMenu, Sidebar, type View } from "@/components/sidebar";
 import { SearchBar } from "@/components/search-bar";
 import { EntryForm } from "@/components/entry-form";
 import { EntryCard } from "@/components/entry-card";
@@ -19,13 +19,18 @@ import { LinksView } from "@/components/links-view";
 import { TasksView } from "@/components/tasks-view";
 import { IdeasView } from "@/components/ideas-view";
 import { FinanceView } from "@/components/finance-view";
+import { HouseView } from "@/components/house-view";
+import { MeetingsView } from "@/components/meetings-view";
+import { ContentView } from "@/components/content-view";
+import { useMeetings } from "@/hooks/use-meetings";
+import { ProfileDialog } from "@/components/profile-dialog";
 import { ConvertDialog, type Conversion } from "@/components/convert-dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { LinkPicker } from "@/components/link-picker";
 import { Toast, type ToastMessage } from "@/components/toast";
-import { Archive, LogOut, Plus, Settings } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { LogOut, Plus, Settings } from "lucide-react";
 import { SwipeToArchive } from "@/components/swipe-to-archive";
+import { FilterBar, passesFilters, useListFilters } from "@/components/filter-bar";
 import { AuthScreen, NewPasswordScreen } from "@/components/auth-screen";
 import { disablePush } from "@/components/notifications-button";
 import { useSession } from "@/hooks/use-session";
@@ -47,6 +52,7 @@ export default function Home() {
   return (
     <AgendaApp
       key={session.user.id}
+      userEmail={session.user.email}
       userName={
         typeof session.user.user_metadata?.name === "string"
           ? session.user.user_metadata.name
@@ -62,9 +68,11 @@ export default function Home() {
 
 function AgendaApp({
   userName,
+  userEmail,
   onSignOut,
 }: {
   userName?: string;
+  userEmail?: string;
   onSignOut: () => void;
 }) {
   const {
@@ -82,6 +90,7 @@ function AgendaApp({
 
   const tasksState = useTasks();
   const categoriesState = useCategories();
+  const meetingsState = useMeetings();
 
   const [view, setView] = useState<View>("entries");
   const [trelloConfigOpen, setTrelloConfigOpen] = useState(false);
@@ -89,10 +98,15 @@ function AgendaApp({
   const [trelloConnected, setTrelloConnected] = useState(false);
   const standalone = useStandalone();
   const [noteOpen, setNoteOpen] = useState(false);
+  // The menu with every module that "Mais" opens on small screens.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   // Entry whose text is open for editing, and note choosing its links.
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [linkingNote, setLinkingNote] = useState<Entry | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
+  // Notes have no date of their own: "date" orders by the last change.
+  const noteFilters = useListFilters("added");
+  const { showDone, showArchived, hideDone, sortBy: noteSort } = noteFilters;
   const [convertingEntry, setConvertingEntry] = useState<Entry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -208,16 +222,21 @@ function AgendaApp({
   };
 
   // Appointments live in the calendar and links on their own page.
-  const notes = useMemo(
-    () =>
-      entries.filter(
-        (e) =>
-          !(e.is_reminder && e.reminder_date) &&
-          e.type !== "link" &&
-          !!e.archived_at === showArchived
-      ),
-    [entries, showArchived]
-  );
+  const notes = useMemo(() => {
+    const list = entries.filter(
+      (e) =>
+        !(e.is_reminder && e.reminder_date) &&
+        e.type !== "link" &&
+        passesFilters(
+          { showDone, showArchived, hideDone },
+          { done: !!e.completed_at, archived: !!e.archived_at }
+        )
+    );
+    // Entries arrive with the last added first.
+    return noteSort === "date"
+      ? [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      : list;
+  }, [entries, showDone, showArchived, hideDone, noteSort]);
   const savedLinks = useMemo(
     () => entries.filter((e) => e.type === "link"),
     [entries]
@@ -242,23 +261,53 @@ function AgendaApp({
       className={standalone ? undefined : "md:hidden"}
       active={standalone && !showAgenda ? "home" : view}
       onNavigate={navigate}
+      onMore={() => setMenuOpen(true)}
+    />
+  );
+
+  // Rendered on every screen, the home one included.
+  const mobileMenu = (
+    <>
+    <ProfileDialog
+      open={profileOpen}
+      onClose={() => setProfileOpen(false)}
+      name={userName}
+      email={userEmail}
+    />
+    <MobileMenu
+      open={menuOpen}
+      onClose={() => setMenuOpen(false)}
+      view={standalone && !showAgenda ? null : view}
+      onViewChange={navigate}
+      onHome={standalone ? () => navigate("home") : undefined}
+      onSettingsClick={() => {
+        // The Trello dialog lives in the pages, not on the home screen.
+        setShowAgenda(true);
+        setTrelloConfigOpen(true);
+      }}
+      onProfileClick={() => setProfileOpen(true)}
+      onSignOut={onSignOut}
       trelloConnected={trelloConnected}
     />
+    </>
   );
 
   if (standalone && !showAgenda) {
     return (
+      <>
       <PwaHome
         userName={userName}
         entries={entries}
         tasks={tasksState.tasks}
+        meetings={meetingsState.meetings}
         categories={categoriesState}
         createEntry={createEntry}
-        onOpenLinks={() => navigate("links")}
-        onOpenTasks={() => navigate("tasks")}
+        onOpen={navigate}
         onSignOut={onSignOut}
         nav={bottomNav}
       />
+      {mobileMenu}
+      </>
     );
   }
 
@@ -269,6 +318,7 @@ function AgendaApp({
         view={view}
         onViewChange={changeView}
         onSettingsClick={() => setTrelloConfigOpen(true)}
+        onProfileClick={() => setProfileOpen(true)}
         onSignOut={onSignOut}
         trelloConnected={trelloConnected}
       />
@@ -311,16 +361,11 @@ function AgendaApp({
                   />
                 </div>
 
-                <div className="flex">
-                  <Badge
-                    variant={showArchived ? "default" : "outline"}
-                    className="cursor-pointer"
-                    onClick={() => setShowArchived((prev) => !prev)}
-                  >
-                    <Archive className="h-3 w-3" />
-                    Arquivadas
-                  </Badge>
-                </div>
+                <FilterBar
+                  filters={noteFilters}
+                  doneLabel="Concluídas"
+                  archivedLabel="Arquivadas"
+                />
 
                 {loading ? (
                   <div className="text-center py-12 text-muted-foreground">
@@ -394,6 +439,9 @@ function AgendaApp({
                     tasks={tasksState.tasks}
                     updateTask={tasksState.updateTask}
                     deleteTask={tasksState.deleteTask}
+                    meetings={meetingsState.meetings}
+                    updateMeeting={meetingsState.updateMeeting}
+                    deleteMeeting={meetingsState.deleteMeeting}
                     categories={categoriesState}
                   />
                 )}
@@ -411,7 +459,7 @@ function AgendaApp({
               loading={loading}
               createEntry={createEntry}
               deleteEntry={requestDelete}
-              onEdit={setEditingEntry}
+              updateEntry={updateEntry}
               onToggleDone={toggleEntryDone}
               onConvert={setConvertingEntry}
               onArchive={toggleEntryArchived}
@@ -425,6 +473,22 @@ function AgendaApp({
             </header>
 
             <TasksView {...tasksState} categories={categoriesState} />
+          </>
+        ) : view === "meetings" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Reuniões</h2>
+            </header>
+
+            <MeetingsView {...meetingsState} />
+          </>
+        ) : view === "content" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Criação de conteúdo</h2>
+            </header>
+
+            <ContentView />
           </>
         ) : view === "ideas" ? (
           <>
@@ -441,6 +505,14 @@ function AgendaApp({
             </header>
 
             <FinanceView />
+          </>
+        ) : view === "house" ? (
+          <>
+            <header className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Casa</h2>
+            </header>
+
+            <HouseView />
           </>
         ) : (
           <>
@@ -459,6 +531,7 @@ function AgendaApp({
       </div>
 
       {bottomNav}
+      {mobileMenu}
 
       {noteOpen && (
         <NoteScreen
@@ -474,7 +547,6 @@ function AgendaApp({
           createEntry={createEntry}
           editing={{
             content: editingEntry.content,
-            allowEmpty: editingEntry.type === "link",
             save: async (content) =>
               !!(await updateEntry(editingEntry.id, { content })),
           }}

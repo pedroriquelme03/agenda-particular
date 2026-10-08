@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { FilterBar, passesFilters, useListFilters } from "@/components/filter-bar";
 import { Checklist } from "@/components/checklist";
 import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { CategoryPicker, categoryColorClass } from "@/components/category-picker";
@@ -62,13 +63,17 @@ export function TasksView({
   categories,
 }: ReturnType<typeof useTasks> & { categories: CategoriesState }) {
   const [formOpen, setFormOpen] = useState(false);
-  const [showDone, setShowDone] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
-  // The eye: on shows checked tasks in place, off hides them.
-  const [hideDone, setHideDone] = useState(false);
+  // The task open for editing; null while the form is creating a new one.
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditingTask(null);
+  };
   // The list is split by day. "date": the deadline day, nearest first.
   // "added": the day the task was registered, latest first.
-  const [sortBy, setSortBy] = useState<"added" | "date">("date");
+  const filters = useListFilters("date");
+  const { showDone, showArchived, sortBy } = filters;
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
 
@@ -81,12 +86,11 @@ export function TasksView({
   };
 
   // Done tasks stay in place, marked as done; the filter narrows to only them.
-  const filtered = tasks.filter(
-    (task) =>
-      !!task.archived_at === showArchived &&
-      (!showDone || !!task.completed_at) &&
-      // "Concluídas" asks for the checked ones, so it wins over the eye.
-      (showDone || !hideDone || !task.completed_at)
+  const filtered = tasks.filter((task) =>
+    passesFilters(filters, {
+      done: !!task.completed_at,
+      archived: !!task.archived_at,
+    })
   );
 
   // Tasks arrive ordered by when they were added. A task without a deadline
@@ -162,60 +166,11 @@ export function TasksView({
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant={showDone ? "default" : "outline"}
-          className="cursor-pointer"
-          onClick={() => setShowDone((prev) => !prev)}
-        >
-          <Check className="h-3 w-3" />
-          Concluídas
-        </Badge>
-        <Badge
-          variant={showArchived ? "default" : "outline"}
-          className="cursor-pointer"
-          onClick={() => setShowArchived((prev) => !prev)}
-        >
-          <Archive className="h-3 w-3" />
-          Arquivadas
-        </Badge>
-        <span className="ml-auto flex items-center gap-2">
-          <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
-          <Badge
-            variant={sortBy === "added" ? "default" : "outline"}
-            className="cursor-pointer"
-            onClick={() => setSortBy("added")}
-          >
-            Adição
-          </Badge>
-          <Badge
-            variant={sortBy === "date" ? "default" : "outline"}
-            className="cursor-pointer"
-            onClick={() => setSortBy("date")}
-          >
-            Data
-          </Badge>
-          <button
-            type="button"
-            onClick={() => setHideDone((prev) => !prev)}
-            aria-pressed={!hideDone}
-            aria-label={hideDone ? "Mostrar concluídas" : "Ocultar concluídas"}
-            title={hideDone ? "Mostrar concluídas" : "Ocultar concluídas"}
-            className={cn(
-              "flex h-6 w-9 shrink-0 items-center justify-center rounded-full border transition-colors",
-              hideDone
-                ? "text-muted-foreground"
-                : "border-foreground bg-foreground text-background"
-            )}
-          >
-            {hideDone ? (
-              <EyeOff className="h-3.5 w-3.5" />
-            ) : (
-              <Eye className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </span>
-      </div>
+      <FilterBar
+        filters={filters}
+        doneLabel="Concluídas"
+        archivedLabel="Arquivadas"
+      />
 
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">Carregando...</div>
@@ -245,6 +200,7 @@ export function TasksView({
               category={categories.categories.find(
                 (category) => category.id === task.category_id
               )}
+              onEdit={() => setEditingTask(task)}
               onToggleDone={() => toggleDone(task)}
               onChecklistChange={(checklist) =>
                 updateTask(task.id, { checklist })
@@ -270,17 +226,27 @@ export function TasksView({
         </Button>
       </div>
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      <Dialog
+        open={formOpen || editingTask !== null}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+        }}
+      >
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nova tarefa</DialogTitle>
+            <DialogTitle>{editingTask ? "Editar tarefa" : "Nova tarefa"}</DialogTitle>
           </DialogHeader>
           <TaskForm
+            // Keyed so the fields start from the task being edited each time.
+            key={editingTask?.id ?? "new"}
+            initial={editingTask}
             categories={categories}
-            onCancel={() => setFormOpen(false)}
+            onCancel={closeForm}
             onSubmit={async (input) => {
-              const task = await createTask(input);
-              if (task) setFormOpen(false);
+              const task = editingTask
+                ? await updateTask(editingTask.id, input)
+                : await createTask(input);
+              if (task) closeForm();
               return !!task;
             }}
           />
@@ -306,12 +272,15 @@ export function TasksView({
 function TaskCard({
   task,
   category,
+  onEdit,
   onToggleDone,
   onChecklistChange,
   onDelete,
 }: {
   task: Task;
   category?: Category;
+  // Opens the task for editing.
+  onEdit: () => void;
   onChecklistChange: (checklist: ChecklistItem[]) => void;
   onToggleDone: () => void;
   onDelete: () => void;
@@ -345,19 +314,22 @@ function TaskCard({
         </button>
 
         <div className="min-w-0 flex-1">
-          <h4
-            className={cn(
-              "text-sm font-semibold sm:text-base",
-              done && "text-muted-foreground line-through"
+          {/* Tapping the title or the description opens the task for editing. */}
+          <button onClick={onEdit} className="block w-full text-left">
+            <h4
+              className={cn(
+                "text-sm font-semibold sm:text-base",
+                done && "text-muted-foreground line-through"
+              )}
+            >
+              {task.title}
+            </h4>
+            {task.description && (
+              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                {task.description}
+              </p>
             )}
-          >
-            {task.title}
-          </h4>
-          {task.description && (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-              {task.description}
-            </p>
-          )}
+          </button>
           {checklist.length > 0 && (
             <div className="mt-2 space-y-2">
               <p className="text-xs text-muted-foreground">
@@ -421,22 +393,31 @@ function TaskCard({
 }
 
 function TaskForm({
+  initial,
   categories,
   onSubmit,
   onCancel,
 }: {
+  // The task being edited; absent when creating.
+  initial?: Task | null;
   categories: CategoriesState;
   onSubmit: (input: TaskInput) => Promise<boolean>;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [project, setProject] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
-  const [dueTime, setDueTime] = useState("");
-  const [value, setValue] = useState("");
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [project, setProject] = useState(initial?.project ?? "");
+  const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
+  const [categoryId, setCategoryId] = useState<string | null>(
+    initial?.category_id ?? null
+  );
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    initial?.checklist ?? []
+  );
+  const [dueTime, setDueTime] = useState(initial?.due_time?.slice(0, 5) ?? "");
+  const [value, setValue] = useState(
+    initial?.value != null ? String(initial.value).replace(".", ",") : ""
+  );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
@@ -563,7 +544,7 @@ function TaskForm({
           Cancelar
         </Button>
         <Button type="submit" disabled={!canSave} className="h-12 flex-1 text-base">
-          {saving ? "Salvando..." : "Salvar tarefa"}
+          {saving ? "Salvando..." : initial ? "Salvar alterações" : "Salvar tarefa"}
         </Button>
       </div>
     </form>

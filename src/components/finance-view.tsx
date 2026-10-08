@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { addMonths, format, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -49,8 +49,36 @@ function appliesTo(item: FinanceItem, month: string) {
 const total = (items: FinanceItem[]) =>
   items.reduce((sum, item) => sum + Number(item.amount), 0);
 
+const nextMonth = (month: string) =>
+  monthKey(addMonths(new Date(month + "T00:00"), 1));
+
+// A fixed account left unsettled when its month ended carries over: it shows
+// in the following months as overdue, once for each month still open.
+interface Overdue {
+  item: FinanceItem;
+  months: string[];
+}
+
+// The months already over, before the one on screen, in which the account
+// applied and was not settled.
+function overdueMonths(item: FinanceItem, month: string, currentMonth: string) {
+  let limit = month < currentMonth ? month : currentMonth;
+  if (item.end_month && item.end_month < limit) limit = item.end_month;
+  const months: string[] = [];
+  for (let m = item.month; m < limit; m = nextMonth(m)) {
+    if (!item.paid_months?.includes(m)) months.push(m);
+  }
+  return months;
+}
+
+const overdueTotal = (overdue: Overdue[]) =>
+  overdue.reduce(
+    (sum, { item, months }) => sum + Number(item.amount) * months.length,
+    0
+  );
+
 export function FinanceView() {
-  const { items, loading, addItem, deleteItem, endItem } = useFinance();
+  const { items, loading, addItem, deleteItem, endItem, setPaid } = useFinance();
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
   const [deleteTarget, setDeleteTarget] = useState<FinanceItem | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -63,7 +91,21 @@ export function FinanceView() {
   const fixedExpense = byKind("fixed_expense");
   const sales = byKind("sale");
 
-  const fixedBalance = total(fixedIncome) - total(fixedExpense);
+  const currentMonth = monthKey(new Date());
+  const overdueOf = (kind: FinanceKind): Overdue[] =>
+    items
+      .filter((item) => item.kind === kind)
+      .map((item) => ({ item, months: overdueMonths(item, month, currentMonth) }))
+      .filter(({ months }) => months.length > 0);
+  const overdueIncome = overdueOf("fixed_income");
+  const overdueExpense = overdueOf("fixed_expense");
+
+  // What is overdue is added to this month's fixed totals.
+  const fixedBalance =
+    total(fixedIncome) +
+    overdueTotal(overdueIncome) -
+    total(fixedExpense) -
+    overdueTotal(overdueExpense);
   const salesTotal = total(sales);
   const cash = fixedBalance + salesTotal;
 
@@ -147,24 +189,34 @@ export function FinanceView() {
               <Section
                 title="Contas fixas a receber"
                 items={fixedIncome}
+                overdue={overdueIncome}
+                onSettleOverdue={(item, months) => setPaid(item.id, months, true)}
                 namePlaceholder="Ex.: Mensalidade do cliente"
                 fixedFrom={month}
                 onAdd={(name, amount, lastMonth) =>
                   add("fixed_income", name, amount, lastMonth)
                 }
                 onSetLastMonth={setLastMonth}
+                onTogglePaid={(item) =>
+                  setPaid(item.id, [month], !item.paid_months?.includes(month))
+                }
                 onRemove={setDeleteTarget}
               />
 
               <Section
                 title="Contas fixas a pagar"
                 items={fixedExpense}
+                overdue={overdueExpense}
+                onSettleOverdue={(item, months) => setPaid(item.id, months, true)}
                 namePlaceholder="Ex.: Aluguel"
                 fixedFrom={month}
                 onAdd={(name, amount, lastMonth) =>
                   add("fixed_expense", name, amount, lastMonth)
                 }
                 onSetLastMonth={setLastMonth}
+                onTogglePaid={(item) =>
+                  setPaid(item.id, [month], !item.paid_months?.includes(month))
+                }
                 onRemove={setDeleteTarget}
               />
 
@@ -219,20 +271,28 @@ export function FinanceView() {
 function Section({
   title,
   items,
+  overdue = [],
+  onSettleOverdue,
   namePlaceholder,
   fixedFrom,
   onAdd,
   onSetLastMonth,
+  onTogglePaid,
   onRemove,
 }: {
   title: string;
   items: FinanceItem[];
+  // Fixed accounts carried over from earlier months that were not settled.
+  overdue?: Overdue[];
+  onSettleOverdue?: (item: FinanceItem, months: string[]) => void;
   namePlaceholder: string;
   // Given for the fixed-account lists: the month on screen ("yyyy-MM-01").
   // Enables choosing until which month an account runs.
   fixedFrom?: string;
   onAdd: (name: string, amount: number, lastMonth: string | null) => Promise<boolean>;
   onSetLastMonth?: (item: FinanceItem, lastMonth: string) => void;
+  // Fixed accounts: marks the account as settled in the month on screen.
+  onTogglePaid?: (item: FinanceItem) => void;
   onRemove: (item: FinanceItem) => void;
 }) {
   const [name, setName] = useState("");
@@ -241,6 +301,9 @@ function Section({
   const [lastMonth, setLastMonth] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+
+  // One late month of one account counts as one.
+  const lateCount = overdue.reduce((sum, { months }) => sum + months.length, 0);
 
   const parsedAmount = parseAmount(amount);
   const amountInvalid = !!amount.trim() && parsedAmount === null;
@@ -265,16 +328,72 @@ function Section({
   return (
     <section className="rounded-xl border">
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <span className="text-sm font-bold tabular-nums">
-          {currency.format(total(items))}
+        <h3 className="min-w-0 text-sm font-semibold">
+          {title}
+          {lateCount > 0 && (
+            <span className="ml-2 text-xs font-medium text-destructive">
+              {lateCount} {lateCount > 1 ? "atrasos" : "atraso"}
+            </span>
+          )}
+        </h3>
+        <span className="shrink-0 text-sm font-bold tabular-nums">
+          {currency.format(total(items) + overdueTotal(overdue))}
         </span>
       </div>
 
-      {items.length > 0 && (
+      {(items.length > 0 || overdue.length > 0) && (
         <ul className="divide-y">
+          {overdue.map(({ item, months }) => (
+            <li
+              key={"overdue-" + item.id}
+              className="flex items-center gap-2 py-1.5 pr-4 pl-4"
+            >
+              <button
+                type="button"
+                onClick={() => onSettleOverdue?.(item, months)}
+                aria-label={`Marcar os atrasos de ${item.name} como pagos`}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-destructive/60"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm">{item.name}</span>
+                <span className="block text-xs font-medium text-destructive">
+                  Atrasado ·{" "}
+                  {months.length > 1 ? months.length + " meses" : "1 mês"} (
+                  {months
+                    .map((m) => format(new Date(m + "T00:00"), "MMM", { locale: ptBR }))
+                    .join(", ")}
+                  )
+                </span>
+              </span>
+              <span className="shrink-0 text-sm tabular-nums">
+                {currency.format(Number(item.amount) * months.length)}
+              </span>
+            </li>
+          ))}
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-2 py-1.5 pr-2 pl-4">
+              {onTogglePaid && fixedFrom && (
+                // Settled is only a green mark: the row keeps its normal look.
+                <button
+                  type="button"
+                  onClick={() => onTogglePaid(item)}
+                  aria-label={
+                    item.paid_months?.includes(fixedFrom)
+                      ? `Desmarcar ${item.name} como paga`
+                      : `Marcar ${item.name} como paga`
+                  }
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                    item.paid_months?.includes(fixedFrom)
+                      ? "border-green-600 bg-green-600 text-white"
+                      : "border-muted-foreground/50"
+                  )}
+                >
+                  {item.paid_months?.includes(fixedFrom) && (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{item.name}</span>
                 {onSetLastMonth && (

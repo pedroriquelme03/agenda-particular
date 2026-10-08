@@ -43,12 +43,71 @@ export interface Idea {
   id: string;
   title: string;
   description: string;
-  // 0 to 100.
+  // 0 to 100: the share of steps done.
   progress: number;
+  // What has to be done to get there, ticked off one by one.
+  steps?: ChecklistItem[];
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
   // Log of progress, newest first.
   idea_updates: IdeaUpdate[];
+}
+
+export type MeetingMode = "online" | "in_person";
+
+export interface Meeting {
+  id: string;
+  title: string;
+  // Plain date, "yyyy-MM-dd", and optional time, "HH:mm:ss".
+  meeting_date: string;
+  meeting_time: string | null;
+  mode: MeetingMode;
+  // Written during the meeting.
+  notes: string;
+  // Written from the notes by the assistant.
+  summary: string;
+  completed_at: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ContentPlatform = "tiktok" | "youtube" | "instagram" | "trafego";
+
+// A reference video to record a version of.
+export interface ContentItem {
+  id: string;
+  url: string;
+  title: string | null;
+  platform: ContentPlatform;
+  // Set when the video was recorded.
+  completed_at: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type HouseKind = "market" | "chore" | "service";
+
+export interface ServiceQuote {
+  id: string;
+  // "Orçamento 1", or the name of who gave it.
+  label: string;
+  amount: number;
+  chosen: boolean;
+}
+
+// One line of the "Casa" module: something to buy, a chore, or a service.
+export interface HouseItem {
+  id: string;
+  kind: HouseKind;
+  text: string;
+  done: boolean;
+  // Services only: the quotes gathered for it.
+  quotes: ServiceQuote[];
+  archived_at?: string | null;
+  created_at: string;
 }
 
 export type FinanceKind = "fixed_income" | "fixed_expense" | "sale";
@@ -63,6 +122,8 @@ export interface FinanceItem {
   month: string;
   // Fixed account only: first month it no longer applies to.
   end_month: string | null;
+  // Fixed account only: the months ("yyyy-MM-01") in which it was settled.
+  paid_months?: string[];
   created_at: string;
 }
 

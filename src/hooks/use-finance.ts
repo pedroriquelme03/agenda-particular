@@ -74,5 +74,29 @@ export function useFinance() {
     return true;
   };
 
-  return { items, loading, addItem, deleteItem, endItem };
+  // Marks a fixed account as settled (or not) in the given months.
+  const setPaid = async (id: string, months: string[], paid: boolean) => {
+    const item = items.find((other) => other.id === id);
+    if (!item) return false;
+    const others = (item.paid_months ?? []).filter((m) => !months.includes(m));
+    const paidMonths = paid ? [...others, ...months] : others;
+    setItems((prev) =>
+      prev.map((other) =>
+        other.id === id ? { ...other, paid_months: paidMonths } : other
+      )
+    );
+    const { error } = await supabase
+      .from("finance_items")
+      .update({ paid_months: paidMonths })
+      .eq("id", id);
+    if (error) {
+      console.error("Error marking finance item as paid:", error);
+      // Put the previous marks back.
+      setItems((prev) => prev.map((other) => (other.id === id ? item : other)));
+      return false;
+    }
+    return true;
+  };
+
+  return { items, loading, addItem, deleteItem, endItem, setPaid };
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import type { Idea, IdeaUpdate } from "@/lib/types";
+import type { ChecklistItem, Idea, IdeaUpdate } from "@/lib/types";
 
 export function useIdeas() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -26,10 +26,14 @@ export function useIdeas() {
     fetchIdeas();
   }, [fetchIdeas]);
 
-  const createIdea = async (title: string, description: string) => {
+  const createIdea = async (
+    title: string,
+    description: string,
+    steps: ChecklistItem[]
+  ) => {
     const { data, error } = await supabase
       .from("ideas")
-      .insert({ title, description })
+      .insert({ title, description, steps })
       .select()
       .single();
     if (error) {
@@ -43,7 +47,9 @@ export function useIdeas() {
 
   const updateIdea = async (
     id: string,
-    updates: Partial<Pick<Idea, "title" | "description" | "progress">>
+    updates: Partial<
+      Pick<Idea, "title" | "description" | "progress" | "steps" | "archived_at">
+    >
   ) => {
     const { error } = await supabase
       .from("ideas")

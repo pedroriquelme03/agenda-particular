@@ -5,12 +5,14 @@ import { EventManager, type Event, type EventDraft } from "@/components/event-ma
 import { format } from "date-fns";
 import { CategoryPicker } from "@/components/category-picker";
 import type { CategoriesState } from "@/hooks/use-categories";
-import type { Category, Entry, EntryType, Task } from "@/lib/types";
+import type { Category, Entry, EntryType, Meeting, Task } from "@/lib/types";
 
 const APPOINTMENT = "Compromisso";
 const TASK = "Tarefa";
 // Entries and tasks live in different tables; the prefix tells them apart.
 const TASK_PREFIX = "task:";
+const MEETING = "Reunião";
+const MEETING_PREFIX = "meeting:";
 // Where a deadline without a time of day sits in the hourly views.
 const TASK_HOUR = 9;
 
@@ -24,6 +26,7 @@ const typeCategories: Record<EntryType, string> = {
 const categoryColors: Record<string, string> = {
   [APPOINTMENT]: "blue",
   [TASK]: "red",
+  [MEETING]: "purple",
   Anotação: "green",
   Voz: "purple",
   Imagem: "orange",
@@ -93,6 +96,31 @@ function taskToEvent(task: Task, lookup: CategoryLookup): Event {
   };
 }
 
+function meetingToEvent(meeting: Meeting): Event {
+  const startTime = new Date(
+    `${meeting.meeting_date}T${meeting.meeting_time || "00:00"}`
+  );
+  if (!meeting.meeting_time) startTime.setHours(TASK_HOUR, 0, 0, 0);
+
+  return {
+    id: MEETING_PREFIX + meeting.id,
+    createdAt: new Date(meeting.created_at),
+    title: meeting.title,
+    description: meeting.notes,
+    startTime,
+    endTime: new Date(startTime.getTime() + HOUR_MS),
+    color: categoryColors[MEETING],
+    category: MEETING,
+    tags: [meeting.mode === "online" ? "Online" : "Presencial"],
+    movable: true,
+    dateOnly: !meeting.meeting_time,
+    fixedDuration: true,
+    checkable: true,
+    done: !!meeting.completed_at,
+    archived: !!meeting.archived_at,
+  };
+}
+
 interface CalendarViewProps {
   entries: Entry[];
   createEntry: (
@@ -103,6 +131,9 @@ interface CalendarViewProps {
   tasks: Task[];
   updateTask: (id: string, updates: Partial<Task>) => Promise<Task | null>;
   deleteTask: (id: string) => Promise<boolean>;
+  meetings: Meeting[];
+  updateMeeting: (id: string, updates: Partial<Meeting>) => Promise<Meeting | null>;
+  deleteMeeting: (id: string) => Promise<boolean>;
   categories: CategoriesState;
 }
 
@@ -114,6 +145,9 @@ export function CalendarView({
   tasks,
   updateTask,
   deleteTask,
+  meetings,
+  updateMeeting,
+  deleteMeeting,
   categories,
 }: CalendarViewProps) {
   const events = useMemo(() => {
@@ -128,8 +162,9 @@ export function CalendarView({
       ...tasks
         .filter((task) => task.due_date)
         .map((task) => taskToEvent(task, lookup)),
+      ...meetings.map(meetingToEvent),
     ];
-  }, [entries, tasks, categories.categories]);
+  }, [entries, tasks, meetings, categories.categories]);
 
   const handleCreate = (draft: EventDraft) => {
     createEntry({
@@ -151,6 +186,35 @@ export function CalendarView({
   const handleUpdate = (id: string, changes: Partial<Event>) => {
     const current = events.find((event) => event.id === id);
     if (!current) return;
+
+    if (id.startsWith(MEETING_PREFIX)) {
+      const meetingUpdates: Partial<Meeting> = {};
+      if (changes.title !== undefined && changes.title.trim() !== current.title) {
+        meetingUpdates.title = changes.title.trim() || current.title;
+      }
+      if (
+        changes.description !== undefined &&
+        changes.description !== current.description
+      ) {
+        meetingUpdates.notes = changes.description;
+      }
+      if (changes.startTime) {
+        const date = format(changes.startTime, "yyyy-MM-dd");
+        if (date !== format(current.startTime, "yyyy-MM-dd")) {
+          meetingUpdates.meeting_date = date;
+        }
+        if (
+          !current.dateOnly &&
+          changes.startTime.getTime() !== current.startTime.getTime()
+        ) {
+          meetingUpdates.meeting_time = format(changes.startTime, "HH:mm:ss");
+        }
+      }
+      if (Object.keys(meetingUpdates).length > 0) {
+        updateMeeting(id.slice(MEETING_PREFIX.length), meetingUpdates);
+      }
+      return;
+    }
 
     if (id.startsWith(TASK_PREFIX)) {
       const taskUpdates: Partial<Task> = {};
@@ -233,13 +297,17 @@ export function CalendarView({
       onEventCreate={handleCreate}
       onEventUpdate={handleUpdate}
       onEventDelete={(id) =>
-        id.startsWith(TASK_PREFIX)
-          ? deleteTask(id.slice(TASK_PREFIX.length))
-          : deleteEntry(id)
+        id.startsWith(MEETING_PREFIX)
+          ? deleteMeeting(id.slice(MEETING_PREFIX.length))
+          : id.startsWith(TASK_PREFIX)
+            ? deleteTask(id.slice(TASK_PREFIX.length))
+            : deleteEntry(id)
       }
       onEventArchive={(id, archive) => {
         const archived_at = archive ? new Date().toISOString() : null;
-        if (id.startsWith(TASK_PREFIX)) {
+        if (id.startsWith(MEETING_PREFIX)) {
+          updateMeeting(id.slice(MEETING_PREFIX.length), { archived_at });
+        } else if (id.startsWith(TASK_PREFIX)) {
           updateTask(id.slice(TASK_PREFIX.length), { archived_at });
         } else {
           updateEntry(id, { archived_at });
@@ -247,7 +315,9 @@ export function CalendarView({
       }}
       onEventToggleDone={(id, done) => {
         const completed_at = done ? new Date().toISOString() : null;
-        if (id.startsWith(TASK_PREFIX)) {
+        if (id.startsWith(MEETING_PREFIX)) {
+          updateMeeting(id.slice(MEETING_PREFIX.length), { completed_at });
+        } else if (id.startsWith(TASK_PREFIX)) {
           updateTask(id.slice(TASK_PREFIX.length), { completed_at });
         } else {
           updateEntry(id, { completed_at });

@@ -30,7 +30,7 @@ function translateError(message: string) {
 }
 
 // Password field with an eye button to show or hide what was typed.
-function PasswordInput(props: React.ComponentProps<typeof Input>) {
+export function PasswordInput(props: React.ComponentProps<typeof Input>) {
   const [visible, setVisible] = useState(false);
 
   return (

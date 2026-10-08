@@ -6,10 +6,14 @@ import { ptBR } from "date-fns/locale";
 import {
   CalendarPlus,
   ChevronLeft,
+  House,
+  Lightbulb,
   Link2,
   ListTodo,
+  Wallet,
   LogOut,
   Mic,
+  Users,
   NotebookPen,
   Square,
 } from "lucide-react";
@@ -21,7 +25,8 @@ import { NotificationsButton } from "@/components/notifications-button";
 import { CategoryPicker } from "@/components/category-picker";
 import type { CategoriesState } from "@/hooks/use-categories";
 import { useDictation } from "@/hooks/use-dictation";
-import type { Entry, Task } from "@/lib/types";
+import type { View } from "@/components/sidebar";
+import type { Entry, Meeting, Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CreateEntry = (
@@ -35,25 +40,37 @@ interface PwaHomeProps {
   userName?: string;
   entries: Entry[];
   tasks: Task[];
+  meetings: Meeting[];
   categories: CategoriesState;
   createEntry: CreateEntry;
-  onOpenLinks: () => void;
-  onOpenTasks: () => void;
+  // Opens one of the modules.
+  onOpen: (view: View) => void;
   onSignOut: () => void;
   nav: React.ReactNode;
 }
 
 const homeButton =
-  "flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl shadow-sm transition-transform active:scale-95";
+  "flex aspect-square min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl px-1 shadow-sm transition-transform active:scale-95";
+const homeLabel = "max-w-full truncate text-[11px] font-semibold";
+
+// The modules opened from the home screen, after the two "create" buttons.
+const homeModules: { view: View; label: string; icon: React.ElementType }[] = [
+  { view: "tasks", label: "Tarefas", icon: ListTodo },
+  { view: "meetings", label: "Reunião", icon: Users },
+  { view: "links", label: "Links", icon: Link2 },
+  { view: "ideas", label: "Ideias", icon: Lightbulb },
+  { view: "finance", label: "Financeiro", icon: Wallet },
+  { view: "house", label: "Casa", icon: House },
+];
 
 export function PwaHome({
   userName,
   entries,
   tasks,
+  meetings,
   categories,
   createEntry,
-  onOpenLinks,
-  onOpenTasks,
+  onOpen,
   onSignOut,
   nav,
 }: PwaHomeProps) {
@@ -132,6 +149,23 @@ export function PwaHome({
         detail: task.project || task.description,
         done: !!task.completed_at,
       })),
+    ...meetings
+      .filter(
+        (meeting) =>
+          !meeting.archived_at &&
+          isSameDay(new Date(meeting.meeting_date + "T00:00"), today)
+      )
+      .map((meeting) => ({
+        id: meeting.id,
+        kind: "Reunião",
+        sortKey: new Date(
+          meeting.meeting_date + "T" + (meeting.meeting_time || "00:00")
+        ).getTime(),
+        time: meeting.meeting_time ? meeting.meeting_time.slice(0, 5) : "Hoje",
+        title: meeting.title,
+        detail: meeting.mode === "online" ? "Online" : "Presencial",
+        done: !!meeting.completed_at,
+      })),
   ].sort((x, y) => x.sortKey - y.sortKey);
 
   return (
@@ -165,7 +199,7 @@ export function PwaHome({
         <div className="min-h-0 flex-1 overflow-y-auto">
           {todayItems.length === 0 ? (
             <p className="py-3 text-sm text-muted-foreground">
-              Nenhum compromisso ou tarefa hoje.
+              Nada marcado para hoje.
             </p>
           ) : (
             <ul className="divide-y rounded-xl border">
@@ -200,7 +234,9 @@ export function PwaHome({
                       "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
                       item.kind === "Tarefa"
                         ? "border-foreground bg-foreground text-background"
-                        : "text-muted-foreground"
+                        : item.kind === "Reunião"
+                          ? "border-foreground text-foreground"
+                          : "text-muted-foreground"
                     )}
                   >
                     {item.kind}
@@ -219,35 +255,31 @@ export function PwaHome({
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-4 gap-2">
           <button
             onClick={() => setScreen("note")}
             className={cn(homeButton, "bg-primary text-primary-foreground")}
           >
-            <NotebookPen className="h-9 w-9" />
-            <span className="text-base font-semibold">Anotação</span>
+            <NotebookPen className="h-6 w-6" />
+            <span className={homeLabel}>Anotação</span>
           </button>
           <button
             onClick={() => setScreen("appointment")}
             className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
           >
-            <CalendarPlus className="h-9 w-9" />
-            <span className="text-base font-semibold">Compromisso</span>
+            <CalendarPlus className="h-6 w-6" />
+            <span className={homeLabel}>Compromisso</span>
           </button>
-          <button
-            onClick={onOpenLinks}
-            className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
-          >
-            <Link2 className="h-9 w-9" />
-            <span className="text-base font-semibold">Links</span>
-          </button>
-          <button
-            onClick={onOpenTasks}
-            className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
-          >
-            <ListTodo className="h-9 w-9" />
-            <span className="text-base font-semibold">Tarefas</span>
-          </button>
+          {homeModules.map(({ view, label, icon: Icon }) => (
+            <button
+              key={view}
+              onClick={() => onOpen(view)}
+              className={cn(homeButton, "border bg-secondary text-secondary-foreground")}
+            >
+              <Icon className="h-6 w-6" />
+              <span className={homeLabel}>{label}</span>
+            </button>
+          ))}
         </div>
       </main>
 

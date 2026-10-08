@@ -14,6 +14,11 @@ import {
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+// One line that fades to nothing at the right edge, so long text looks like it
+// is ending rather than being cut.
+const fadeOut =
+  "block overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_80%,transparent)]";
+
 interface LinkPickerProps {
   // The note whose links are being chosen; null keeps the dialog closed.
   note: Entry | null;
@@ -78,7 +83,7 @@ function LinkChoices({
           Nenhum link salvo ainda. Adicione um na página Links.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="min-w-0 space-y-2">
           {links.map((link) => {
             const isSelected = selected.includes(link.id);
             return (
@@ -87,7 +92,7 @@ function LinkChoices({
                   type="button"
                   onClick={() => toggle(link.id)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                    "flex w-full min-w-0 items-center gap-3 rounded-lg border p-3 text-left transition-colors",
                     isSelected && "border-foreground"
                   )}
                 >
@@ -103,11 +108,11 @@ function LinkChoices({
                   </span>
                   <span className="min-w-0 flex-1">
                     {link.title && (
-                      <span className="block truncate text-sm font-medium">
+                      <span className={cn("text-sm font-medium", fadeOut)}>
                         {link.title}
                       </span>
                     )}
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className={cn("text-xs text-muted-foreground", fadeOut)}>
                       {link.link_url}
                     </span>
                   </span>

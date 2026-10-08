@@ -16,12 +16,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { Checklist } from "@/components/checklist";
+import { FilterBar, passesFilters, useListFilters } from "@/components/filter-bar";
+import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { useIdeas } from "@/hooks/use-ideas";
-import type { Idea } from "@/lib/types";
+import type { ChecklistItem, Idea } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const PROGRESS_STEPS = [0, 25, 50, 75, 100];
+// Progress is the share of steps done: 2 of 5 is 40%. No steps, no progress.
+function progressOf(steps: ChecklistItem[]) {
+  if (steps.length === 0) return 0;
+  return Math.round(
+    (steps.filter((step) => step.done).length / steps.length) * 100
+  );
+}
 
 function statusLabel(progress: number) {
   if (progress >= 100) return "Concluída";
@@ -43,6 +52,8 @@ function ProgressBar({ value }: { value: number }) {
 export function IdeasView() {
   const { ideas, loading, createIdea, updateIdea, deleteIdea, addUpdate, deleteUpdate } =
     useIdeas();
+  // An idea is "done" at 100%. "date" orders by the last change.
+  const filters = useListFilters("added");
   const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Idea | null>(null);
@@ -50,6 +61,36 @@ export function IdeasView() {
 
   // Looked up from the list so the open idea reflects every change made to it.
   const openIdea = ideas.find((idea) => idea.id === openId) ?? null;
+
+  const filtered = ideas.filter((idea) =>
+    passesFilters(filters, {
+      done: idea.progress >= 100,
+      archived: !!idea.archived_at,
+    })
+  );
+  // Ideas arrive with the last added first.
+  const visible =
+    filters.sortBy === "date"
+      ? [...filtered].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      : filtered;
+
+  const toggleArchived = (idea: Idea) => {
+    const archive = !idea.archived_at;
+    updateIdea(idea.id, {
+      archived_at: archive ? new Date().toISOString() : null,
+    });
+    setToast({
+      id: Date.now(),
+      text: archive ? "Ideia arquivada" : "Ideia desarquivada",
+      ...(archive && {
+        actionLabel: "Desfazer",
+        onAction: () => {
+          updateIdea(idea.id, { archived_at: null });
+          setToast(null);
+        },
+      }),
+    });
+  };
 
   const confirmDelete = async () => {
     const idea = deleteTarget;
@@ -63,16 +104,29 @@ export function IdeasView() {
     <div className="flex min-h-0 flex-1 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-2xl space-y-3 p-4 md:p-6">
+          <FilterBar
+            filters={filters}
+            doneLabel="Concluídas"
+            archivedLabel="Arquivadas"
+          />
           {loading ? (
             <div className="py-12 text-center text-muted-foreground">Carregando...</div>
-          ) : ideas.length === 0 ? (
+          ) : visible.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
-              Nenhuma ideia ainda. Registre a primeira!
+              {filters.showArchived
+                ? "Nenhuma ideia arquivada."
+                : ideas.length === 0
+                  ? "Nenhuma ideia ainda. Registre a primeira!"
+                  : "Nenhuma ideia com esses filtros."}
             </div>
           ) : (
-            ideas.map((idea) => (
-              <button
+            visible.map((idea) => (
+              <SwipeToArchive
                 key={idea.id}
+                archived={!!idea.archived_at}
+                onArchive={() => toggleArchived(idea)}
+              >
+              <button
                 onClick={() => setOpenId(idea.id)}
                 className={cn(
                   "block w-full space-y-2 rounded-lg border bg-card p-3 text-left sm:p-4",
@@ -99,6 +153,7 @@ export function IdeasView() {
                   </p>
                 )}
               </button>
+              </SwipeToArchive>
             ))
           )}
         </div>
@@ -120,8 +175,8 @@ export function IdeasView() {
             <DialogTitle>Nova ideia</DialogTitle>
           </DialogHeader>
           <IdeaForm
-            onSubmit={async (title, description) => {
-              const idea = await createIdea(title, description);
+            onSubmit={async (title, description, steps) => {
+              const idea = await createIdea(title, description, steps);
               if (idea) setFormOpen(false);
               return !!idea;
             }}
@@ -140,7 +195,9 @@ export function IdeasView() {
             <IdeaDetail
               key={openIdea.id}
               idea={openIdea}
-              onProgress={(progress) => updateIdea(openIdea.id, { progress })}
+              onSteps={(steps) =>
+                updateIdea(openIdea.id, { steps, progress: progressOf(steps) })
+              }
               onAddUpdate={(text) => addUpdate(openIdea.id, text)}
               onDeleteUpdate={(updateId) => deleteUpdate(openIdea.id, updateId)}
               onDelete={() => {
@@ -171,10 +228,15 @@ export function IdeasView() {
 function IdeaForm({
   onSubmit,
 }: {
-  onSubmit: (title: string, description: string) => Promise<boolean>;
+  onSubmit: (
+    title: string,
+    description: string,
+    steps: ChecklistItem[]
+  ) => Promise<boolean>;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [steps, setSteps] = useState<ChecklistItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
@@ -183,7 +245,7 @@ function IdeaForm({
     if (!title.trim() || saving) return;
     setSaving(true);
     setSaveError(false);
-    const saved = await onSubmit(title.trim(), description.trim());
+    const saved = await onSubmit(title.trim(), description.trim(), steps);
     setSaving(false);
     if (!saved) setSaveError(true);
   };
@@ -212,6 +274,10 @@ function IdeaForm({
           className="text-base"
         />
       </div>
+      <div className="space-y-2">
+        <Label>Passos para chegar lá</Label>
+        <Checklist items={steps} onChange={setSteps} />
+      </div>
       {saveError && (
         <p className="text-sm text-destructive">
           Não foi possível salvar. Tente de novo.
@@ -230,19 +296,20 @@ function IdeaForm({
 
 function IdeaDetail({
   idea,
-  onProgress,
+  onSteps,
   onAddUpdate,
   onDeleteUpdate,
   onDelete,
 }: {
   idea: Idea;
-  onProgress: (progress: number) => void;
+  onSteps: (steps: ChecklistItem[]) => void;
   onAddUpdate: (text: string) => Promise<boolean>;
   onDeleteUpdate: (updateId: string) => void;
   onDelete: () => void;
 }) {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
+  const steps = idea.steps ?? [];
 
   const addProgress = async () => {
     if (!text.trim() || saving) return;
@@ -267,29 +334,24 @@ function IdeaDetail({
         )}
 
         <div className="space-y-2">
-          <Label>Progresso</Label>
-          <ProgressBar value={idea.progress} />
-          <div className="flex gap-2">
-            {PROGRESS_STEPS.map((step) => (
-              <button
-                key={step}
-                type="button"
-                onClick={() => onProgress(step)}
-                className={cn(
-                  "flex-1 rounded-md border py-1.5 text-sm font-medium transition-colors",
-                  idea.progress === step
-                    ? "border-foreground bg-foreground text-background"
-                    : "text-muted-foreground"
-                )}
-              >
-                {step}%
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2">
+            <Label>Passos</Label>
+            <span className="text-xs text-muted-foreground">
+              {steps.filter((step) => step.done).length}/{steps.length} ·{" "}
+              {idea.progress}%
+            </span>
           </div>
+          <ProgressBar value={idea.progress} />
+          <Checklist items={steps} onChange={onSteps} />
+          {steps.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Adicione os passos; o progresso sobe conforme você marca cada um.
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="idea-update">Registrar progresso</Label>
+          <Label htmlFor="idea-update">Registrar anotação de progresso</Label>
           <Textarea
             id="idea-update"
             value={text}

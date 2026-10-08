@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { FilterBar, passesFilters, useListFilters } from "@/components/filter-bar";
 import { SwipeToArchive } from "@/components/swipe-to-archive";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { cn } from "@/lib/utils";
@@ -180,14 +181,10 @@ export function EventManager({
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   // Day tapped in the month grid; its items are listed below the calendar.
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  // Off: everything, with done items marked as such. On: only the done ones.
-  const [showDone, setShowDone] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
-  // The eye: on shows checked items in place, off hides them.
-  const [hideDone, setHideDone] = useState(false);
   // The full list is split by day. "date": the item's own day, earliest first.
   // "added": the day it was registered, latest first.
-  const [listSort, setListSort] = useState<"added" | "date">("date");
+  const filters = useListFilters("date");
+  const { showDone, showArchived, hideDone, sortBy: listSort } = filters;
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
   const dayPanelRef = useRef<HTMLDivElement>(null);
@@ -220,10 +217,9 @@ export function EventManager({
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
-      if (!!event.archived !== showArchived) return false;
-      if (showDone && !event.done) return false;
-      // "Concluídos" asks for the checked ones, so it wins over the eye.
-      if (hideDone && event.done && !showDone) return false;
+      if (!passesFilters(filters, { done: !!event.done, archived: !!event.archived })) {
+        return false;
+      }
 
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -245,6 +241,7 @@ export function EventManager({
 
       return true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `filters` is a new object every render; its values are listed
   }, [events, searchQuery, selectedCategories, showDone, showArchived, hideDone]);
 
   const endBeforeStart = newEvent
@@ -474,71 +471,13 @@ export function EventManager({
         </div>
 
         {(onEventToggleDone || onEventArchive || view === "list") && (
-          <div className="flex flex-wrap items-center gap-2">
-            {onEventToggleDone && (
-              <Badge
-                variant={showDone ? "default" : "outline"}
-                className="cursor-pointer"
-                onClick={() => setShowDone((prev) => !prev)}
-              >
-                <Check className="h-3 w-3" />
-                Concluídos
-              </Badge>
-            )}
-            {onEventArchive && (
-              <Badge
-                variant={showArchived ? "default" : "outline"}
-                className="cursor-pointer"
-                onClick={() => setShowArchived((prev) => !prev)}
-              >
-                <Archive className="h-3 w-3" />
-                Arquivados
-              </Badge>
-            )}
-            {view === "list" && (
-              <span className="ml-auto flex items-center gap-2">
-                <span className="sr-only">Ordenar</span>
-                <ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />
-                <Badge
-                  variant={listSort === "added" ? "default" : "outline"}
-                  className="cursor-pointer"
-                  onClick={() => setListSort("added")}
-                >
-                  Adição
-                </Badge>
-                <Badge
-                  variant={listSort === "date" ? "default" : "outline"}
-                  className="cursor-pointer"
-                  onClick={() => setListSort("date")}
-                >
-                  Data
-                </Badge>
-              </span>
-            )}
-            {onEventToggleDone && (
-              <button
-                type="button"
-                onClick={() => setHideDone((prev) => !prev)}
-                aria-pressed={!hideDone}
-                aria-label={hideDone ? "Mostrar concluídos" : "Ocultar concluídos"}
-                title={hideDone ? "Mostrar concluídos" : "Ocultar concluídos"}
-                className={cn(
-                  "flex h-6 w-9 shrink-0 items-center justify-center rounded-full border transition-colors",
-                  // In the list it follows the sort buttons; elsewhere it sits alone at the right.
-                  view !== "list" && "ml-auto",
-                  hideDone
-                    ? "text-muted-foreground"
-                    : "border-foreground bg-foreground text-background"
-                )}
-              >
-                {hideDone ? (
-                  <EyeOff className="h-3.5 w-3.5" />
-                ) : (
-                  <Eye className="h-3.5 w-3.5" />
-                )}
-              </button>
-            )}
-          </div>
+          <FilterBar
+            filters={filters}
+            done={!!onEventToggleDone}
+            archived={!!onEventArchive}
+            // Only the full list has an order to choose.
+            sort={view === "list"}
+          />
         )}
 
         {categories.length > 0 && (

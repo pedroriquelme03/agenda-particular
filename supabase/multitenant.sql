@@ -333,3 +333,96 @@ grant select, insert, update, delete on public.finance_items to authenticated;
 
 -- Steps of a task: [{ "id": "...", "text": "...", "done": false }]
 alter table public.tasks add column if not exists checklist jsonb not null default '[]'::jsonb;
+
+-- 9. House ----------------------------------------------------------------------
+
+-- The "Casa" module: shopping list, chores and services to get quotes for.
+create table if not exists public.house_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  kind text not null check (kind in ('market', 'chore', 'service')),
+  text text not null,
+  done boolean not null default false,
+  -- Services only: [{ "id": "...", "label": "Orçamento 1", "amount": 150.0, "chosen": false }]
+  quotes jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_house_items_user on public.house_items (user_id);
+
+alter table public.house_items enable row level security;
+drop policy if exists "house_items_owner" on public.house_items;
+create policy "house_items_owner" on public.house_items
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.house_items from anon;
+grant select, insert, update, delete on public.house_items to authenticated;
+
+-- 10. Later additions -----------------------------------------------------------
+
+-- Ideas and house items can be archived like the rest.
+alter table public.ideas add column if not exists archived_at timestamptz;
+alter table public.house_items add column if not exists archived_at timestamptz;
+
+-- Fixed accounts repeat every month, so "paid" is kept per month:
+-- the first day of each month in which the account was settled.
+alter table public.finance_items add column if not exists paid_months date[] not null default '{}';
+
+-- 11. Meetings and content ------------------------------------------------------
+
+-- Meetings: scheduled like a task, with notes taken during it and a summary
+-- written from those notes.
+create table if not exists public.meetings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  title text not null,
+  meeting_date date not null,
+  meeting_time time,
+  mode text not null default 'online' check (mode in ('online', 'in_person')),
+  notes text not null default '',
+  summary text not null default '',
+  completed_at timestamptz,
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Content creation: reference videos to record a version of.
+create table if not exists public.content_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade default auth.uid(),
+  url text not null,
+  title text,
+  platform text not null check (platform in ('tiktok', 'youtube', 'instagram', 'trafego')),
+  -- Set when the video was recorded.
+  completed_at timestamptz,
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_meetings_user on public.meetings (user_id);
+create index if not exists idx_content_items_user on public.content_items (user_id);
+
+alter table public.meetings enable row level security;
+drop policy if exists "meetings_owner" on public.meetings;
+create policy "meetings_owner" on public.meetings
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.meetings from anon;
+grant select, insert, update, delete on public.meetings to authenticated;
+
+alter table public.content_items enable row level security;
+drop policy if exists "content_items_owner" on public.content_items;
+create policy "content_items_owner" on public.content_items
+  for all to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+revoke all on public.content_items from anon;
+grant select, insert, update, delete on public.content_items to authenticated;
+
+-- The steps to reach an idea's goal: [{ "id": "...", "text": "...", "done": false }].
+-- The idea's progress is the share of steps done.
+alter table public.ideas add column if not exists steps jsonb not null default '[]'::jsonb;
